@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AGRA JAYA - Poultry Equipment & Close House Installation</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        /* CSS Variables */
+        :root {
+            --primary-blue: #0077c8; 
+            --secondary-blue: #005a9c;
+            --accent-orange: #d9531e; 
+            --accent-yellow: #f4d000; 
+            --text-dark: #333;
+            --bg-light: #f8f9fa;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Poppins', sans-serif;
+            scroll-behavior: smooth;
+        }
+
+        body {
+            background-color: var(--bg-light);
+            color: var(--text-dark);
+            overflow-x: hidden;
+        }
+
+        /* Splash Screen */
+        #splash-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            transition: opacity 0.8s ease-out;
+        }
+
+        .splash-logo {
+            width: 200px;
+            animation: pulse 1.5s infinite;
+            border-radius: 50%;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 119, 200, 0.7); }
+            70% { transform: scale(1.05); box-shadow: 0 0 0 20px rgba(0, 119, 200, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 119, 200, 0); }
+        }
+
+        /* Navbar */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.98);
+            padding: 15px 5%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+
+        .logo-text {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--primary-blue);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-text img {
+            width: 45px;
+            border-radius: 50%;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 25px;
+        }
+
+        .nav-links a {
+            text-decoration: none;
+            color: var(--primary-blue);
+            font-weight: 600;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: var(--accent-orange);
+        }
+
+        /* Hero Section with Image Background */
+        #hero {
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            /* Overlay Gelap + Background Image */
+            background: linear-gradient(rgba(0, 30, 60, 0.8), rgba(0, 119, 200, 0.6)), 
+                        url('https://fjudjicfgvpilvtpsfde.supabase.co/storage/v1/object/public/AGRA%20JAYA/images%20(1).jpg') center/cover no-repeat;
+            position: relative;
+            padding-top: 80px;
+        }
+
+        .tilt-card {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 50px;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+            text-align: center;
+            max-width: 650px;
+            z-index: 2;
+            transform-style: preserve-3d;
+            perspective: 1000px;
+            border-top: 6px solid var(--accent-orange);
+            margin: 0 20px;
+        }
+
+        .tilt-card h1 {
+            color: var(--primary-blue);
+            font-size: 2.6rem;
+            margin-bottom: 20px;
+            transform: translateZ(50px);
+            line-height: 1.2;
+        }
+
+        .tilt-card p {
+            color: #555;
+            font-size: 1.1rem;
+            margin-bottom: 30px;
+            transform: translateZ(30px);
+        }
+
+        .btn-primary {
+            background: var(--accent-orange);
+            color: white;
+            padding: 14px 35px;
+            text-decoration: none;
+            border-radius: 30px;
+            font-weight: 600;
+            box-shadow: 0 5px 15px rgba(217, 83, 30, 0.4);
+            transition: all 0.3s;
+            display: inline-block;
+            transform: translateZ(40px);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-blue);
+            box-shadow: 0 5px 15px rgba(0, 119, 200, 0.4);
+        }
+
+        /* Global Section Styling */
+        section {
+            padding: 80px 5%;
+        }
+
+        .section-title {
+            text-align: center;
+            color: var(--primary-blue);
+            font-size: 2.2rem;
+            margin-bottom: 60px;
+            position: relative;
+        }
+
+        .section-title::after {
+            content: '';
+            position: absolute;
+            width: 60px;
+            height: 4px;
+            background: var(--accent-yellow);
+            bottom: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-radius: 2px;
+        }
+
+        /* Services Section with Images */
+        #services {
+            background: #fff;
+        }
+
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 30px;
+        }
+
+        .service-card {
+            background: var(--bg-light);
+            border-radius: 15px;
+            overflow: hidden;
+            transition: transform 0.4s, box-shadow 0.4s;
+            border-bottom: 5px solid transparent;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .service-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 15px 30px rgba(0,0,0,0.15);
+            border-bottom: 5px solid var(--accent-orange);
+        }
+
+        .service-img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover; /* Efektif menyembunyikan watermark di tepi */
+            transition: transform 0.5s;
+        }
+
+        .service-card:hover .service-img {
+            transform: scale(1.1);
+        }
+
+        .service-content {
+            padding: 25px;
+            text-align: center;
+            background: var(--bg-light);
+            position: relative;
+            z-index: 1;
+        }
+
+        .service-content i {
+            font-size: 30px;
+            color: var(--accent-orange);
+            margin-bottom: 15px;
+        }
+
+        .service-content h3 {
+            color: var(--primary-blue);
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+
+        /* Area Section */
+        #area {
+            background: var(--primary-blue);
+            color: white;
+            text-align: center;
+        }
+
+        #area .section-title {
+            color: white;
+        }
+
+        .area-container {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 40px;
+            flex-wrap: wrap;
+        }
+
+        .area-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px 35px;
+            border-radius: 50px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255,255,255,0.2);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .area-item i {
+            color: var(--accent-yellow);
+        }
+
+        /* Gallery Section */
+        #gallery {
+            background: var(--bg-light);
+        }
+
+        .gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .gallery-item {
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            height: 250px;
+        }
+
+        .gallery-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.4s ease;
+        }
+
+        .gallery-item:hover img {
+            transform: scale(1.1);
+        }
+
+        /* Floating WhatsApp Button */
+        .wa-float {
+            position: fixed;
+            width: 65px;
+            height: 65px;
+            bottom: 30px;
+            right: 30px;
+            background-color: #25d366;
+            color: #FFF;
+            border-radius: 50px;
+            text-align: center;
+            font-size: 35px;
+            box-shadow: 0 5px 15px rgba(37, 211, 102, 0.4);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            transition: transform 0.3s;
+        }
+
+        .wa-float:hover {
+            transform: scale(1.15) translateY(-5px);
+        }
+
+        /* Footer */
+        footer {
+            background: #111;
+            color: white;
+            text-align: center;
+            padding: 30px 20px;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .nav-links { display: none; } /* Simple hide for mobile, can add hamburger menu later */
+            .tilt-card h1 { font-size: 2rem; }
+            .tilt-card { padding: 30px; margin: 0 15px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Splash Screen -->
+    <div id="splash-screen">
+        <img src="https://fjudjicfgvpilvtpsfde.supabase.co/storage/v1/object/public/AGRA%20JAYA/868d50ea-2fb1-4329-85a7-643b79208fd7.jpg" alt="Agra Jaya Logo" class="splash-logo">
+    </div>
+
+    <!-- Navigation -->
+    <nav>
+        <div class="logo-text">
+            <img src="https://fjudjicfgvpilvtpsfde.supabase.co/storage/v1/object/public/AGRA%20JAYA/868d50ea-2fb1-4329-85a7-643b79208fd7.jpg" alt="Logo">
+            AGRA JAYA
+        </div>
+        <div class="nav-links">
+            <a href="#hero">Beranda</a>
+            <a href="#services">Layanan</a>
+            <a href="#gallery">Galeri</a>
+            <a href="#area">Area</a>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section id="hero">
+        <div class="tilt-card" id="tilt">
+            <h1>Solusi Terpercaya Peternakan Anda</h1>
+            <p>Spesialis dalam Poultry Equipment, Instalasi Close House, Servis, dan Konsultasi Peternakan Modern yang Berkelanjutan.</p>
+            <a href="#services" class="btn-primary">Lihat Layanan Kami</a>
+        </div>
+    </section>
+
+    <!-- Services Section with Images -->
+    <section id="services">
+        <h2 class="section-title">Layanan Kami</h2>
+        <div class="services-grid">
+            <div class="service-card">
+                <img src="https://fjudjicfgvpilvtpsfde.supabase.co/storage/v1/object/public/AGRA%20JAYA/images%20(2).jpg" alt="Poultry Equipment" class="service-img">
+                <div class="service-content">
+                    <i class="fas fa-tractor"></i>
+                    <h3>Poultry Equipment</h3>
+                    <p>Penyediaan peralatan peternakan unggas berkualitas tinggi untuk efisiensi maksimal.</p>
+                </div>
+            </div>
+            <div class="service-card">
+                <img src="https://fjudjicfgvpilvtpsfde.supabase.co/storage/v1/object/public/AGRA%20JAYA/images%20(3).jpg" alt="Close House" class="service-img">
+                <div class="service-content">
+                    <i class="fas fa-home"></i>
+                    <h3>Close House Instalation</h3>
+                    <p>Instalasi kandang sistem tertutup modern untuk mengatur iklim mikro yang optimal.</p>
+                </div>
+            </div>
+            <div class="service-card">
+                <img src="https://fjudjicfgvpilvtpsfde.supabase.co/storage/v1/object/public/AGRA%20JAYA/images%20(4).jpg" alt="Servicing" class="service-img">
+                <div class="service-content">
+                    <i class="fas fa-tools"></i>
+                    <h3>Servicing</h3>
+                    <p>Layanan perbaikan dan perawatan alat peternakan secara berkala dan sangat profesional.</p>
+                </div>
+            </div>
+            <div class="service-card">
+                <img src="https://fjudjicfgvpilvtpsfde.supabase.co/storage/v1/object/public/AGRA%20JAYA/images%20(5).jpg" alt="Consulting" class="service-img">
+                <div class="service-content">
+                    <i class="fas fa-user-tie"></i>
+                    <h3>Consulting</h3>
+                    <p>Konsultasi ahli untuk manajemen peternakan, perancangan, dan peningkatan produktivitas.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Gallery Section -->
+    <section id="gallery">
+        <h2 class="section-title">Galeri Pekerjaan Kami</h2>
+        <div class="gallery-grid">
+            <div class="gallery-item"><img src="https://fjudjicfgvpilvtpsfde.supabase.co/storage/v1/object/public/AGRA%20JAYA/images%20(6).jpg" alt="Gallery 1"></div>
+            <div class="gallery-item"><img src="https://fjudjicfgvpilvtpsfde.supabase.co/storage/v1/object/public/AGRA%20JAYA/images%20(7).jpg" alt="Gallery 2"></div>
+            <div class="gallery-item"><img src="https://fjudjicfgvpilvtpsfde.supabase.co/storage/v1/object/public/AGRA%20JAYA/images%20(8).jpg" alt="Gallery 3"></div>
+            <div class="gallery-item"><img src="https://fjudjicfgvpilvtpsfde.supabase.co/storage/v1/object/public/AGRA%20JAYA/images%20(9).jpg" alt="Gallery 4"></div>
+            <div class="gallery-item"><img src="https://fjudjicfgvpilvtpsfde.supabase.co/storage/v1/object/public/AGRA%20JAYA/images%20(10).jpg" alt="Gallery 5"></div>
+            <div class="gallery-item"><img src="https://fjudjicfgvpilvtpsfde.supabase.co/storage/v1/object/public/AGRA%20JAYA/images%20(11).jpg" alt="Gallery 6"></div>
+            <div class="gallery-item"><img src="https://fjudjicfgvpilvtpsfde.supabase.co/storage/v1/object/public/AGRA%20JAYA/images%20(12).jpg" alt="Gallery 7"></div>
+            <div class="gallery-item"><img src="https://fjudjicfgvpilvtpsfde.supabase.co/storage/v1/object/public/AGRA%20JAYA/images.jpg" alt="Gallery 8"></div>
+        </div>
+    </section>
+
+    <!-- Area Section -->
+    <section id="area">
+        <h2 class="section-title">Area Layanan Kami</h2>
+        <p style="font-size: 1.1rem; opacity: 0.9;">Kami siap melayani kebutuhan instalasi dan servis peternakan Anda di wilayah:</p>
+        <div class="area-container">
+            <div class="area-item"><i class="fas fa-map-marker-alt"></i> Purwokerto</div>
+            <div class="area-item"><i class="fas fa-map-marker-alt"></i> Magelang</div>
+            <div class="area-item"><i class="fas fa-map-marker-alt"></i> Yogyakarta</div>
+        </div>
+    </section>
+
+    <!-- Floating WhatsApp Button -->
+    <a href="https://wa.me/6282138785510" target="_blank" class="wa-float" title="Hubungi kami via WhatsApp">
+        <i class="fab fa-whatsapp"></i>
+    </a>
+
+    <!-- Footer -->
+    <footer>
+        <p>&copy; 2026 AGRA JAYA. All Rights Reserved.</p>
+        <p style="font-size: 14px; margin-top: 8px; color: #888;">Poultry Equipment | Close House Instalation | Servicing | Consulting</p>
+    </footer>
+
+    <!-- JavaScript for 3D Tilt and Splash Screen -->
+    <script>
+        // Splash Screen Logic
+        window.addEventListener('load', () => {
+            const splash = document.getElementById('splash-screen');
+            setTimeout(() => {
+                splash.style.opacity = '0';
+                setTimeout(() => {
+                    splash.style.display = 'none';
+                }, 800);
+            }, 2000); 
+        });
+
+        // 3D Tilt Effect Logic
+        const card = document.getElementById('tilt');
+        
+        card.addEventListener('mousemove', (e) => {
+            const rect = card.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            const centerX = rect.width / 2;
+            const centerY = rect.height / 2;
+            
+            const rotateX = ((y - centerY) / centerY) * -15; 
+            const rotateY = ((x - centerX) / centerX) * 15;
+            
+            card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+            card.style.transition = 'none';
+        });
+
+        card.addEventListener('mouseleave', () => {
+            card.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg)';
+            card.style.transition = 'transform 0.5s ease';
+        });
+    </script>
+</body>
+</html>
