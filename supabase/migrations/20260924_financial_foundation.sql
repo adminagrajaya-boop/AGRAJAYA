@@ -4,6 +4,8 @@
 -- Mode: Idempotent, Non-Destructive, Strict Double-Entry Accounting, Immutable Ledger
 -- ==============================================================================
 
+BEGIN;
+
 -- ------------------------------------------------------------------------------
 -- 1. CHART OF ACCOUNTS (COA)
 -- ------------------------------------------------------------------------------
@@ -192,11 +194,13 @@ CREATE INDEX IF NOT EXISTS idx_jrn_lines_account ON public.journal_lines(chart_o
 
 -- IMMUTABILITY ENFORCEMENT TRIGGER (POSTED JOURNALS CANNOT BE MODIFIED OR DELETED)
 CREATE OR REPLACE FUNCTION public.prevent_journal_modification()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER 
+SET search_path = public
+LANGUAGE plpgsql AS $$
 BEGIN
     RAISE EXCEPTION 'IMMUTABLE_RECORD: Jurnal dan baris rincian yang sudah berstatus POSTED tidak dapat diubah atau dihapus. Gunakan fungsi reverse_journal_entry() untuk pembatalan akuntansi yang sah.';
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 DROP TRIGGER IF EXISTS trg_immutable_journal_entries ON public.journal_entries;
 CREATE TRIGGER trg_immutable_journal_entries
@@ -234,7 +238,9 @@ CREATE INDEX IF NOT EXISTS idx_expenses_coa ON public.expenses(chart_of_account_
 
 -- COA CATEGORY VALIDATOR FOR EXPENSES
 CREATE OR REPLACE FUNCTION public.validate_expense_coa()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER 
+SET search_path = public
+LANGUAGE plpgsql AS $$
 DECLARE
     v_cat VARCHAR;
 BEGIN
@@ -244,7 +250,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 DROP TRIGGER IF EXISTS trg_validate_expense_coa ON public.expenses;
 CREATE TRIGGER trg_validate_expense_coa
@@ -275,7 +281,9 @@ CREATE INDEX IF NOT EXISTS idx_equity_date ON public.equity_transactions(equity_
 
 -- COA CATEGORY VALIDATOR FOR EQUITY
 CREATE OR REPLACE FUNCTION public.validate_equity_coa()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER 
+SET search_path = public
+LANGUAGE plpgsql AS $$
 DECLARE
     v_cat VARCHAR;
 BEGIN
@@ -285,7 +293,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 DROP TRIGGER IF EXISTS trg_validate_equity_coa ON public.equity_transactions;
 CREATE TRIGGER trg_validate_equity_coa
@@ -339,8 +347,10 @@ DECLARE
     v_has_debit BOOLEAN := FALSE;
     v_has_credit BOOLEAN := FALSE;
 BEGIN
-    -- 1. Validasi Autentikasi & Otorisasi Role
-    IF public.get_current_user_role() NOT IN ('owner', 'admin', 'kasir') THEN
+    -- 1. Validasi Autentikasi & Otorisasi Role (Eksplisit Menolak NULL / Unauthenticated)
+    IF public.get_current_user_role() IS NULL 
+       OR public.get_current_user_role() NOT IN ('owner', 'admin', 'kasir') 
+    THEN
         RAISE EXCEPTION 'UNAUTHORIZED: Hanya role owner, admin, atau kasir yang berhak memposting jurnal';
     END IF;
 
@@ -350,8 +360,10 @@ BEGIN
         RAISE EXCEPTION 'UNAUTHENTICATED: User ID wajib terisi atau user harus terautentikasi';
     END IF;
 
-    -- 2. Validasi Tipe Dokumen Sumber
-    IF p_source_type NOT IN ('TRANSACTION', 'INVOICE', 'PURCHASE', 'PAYMENT', 'EXPENSE', 'EQUITY', 'STOCK_ADJUSTMENT') THEN
+    -- 2. Validasi Tipe Dokumen Sumber (Eksplisit Menolak NULL)
+    IF p_source_type IS NULL 
+       OR p_source_type NOT IN ('TRANSACTION', 'INVOICE', 'PURCHASE', 'PAYMENT', 'EXPENSE', 'EQUITY', 'STOCK_ADJUSTMENT') 
+    THEN
         RAISE EXCEPTION 'INVALID_SOURCE_TYPE: source_type % tidak didukung untuk jurnal reguler', p_source_type;
     END IF;
 
@@ -385,6 +397,8 @@ BEGIN
             IF NOT EXISTS (SELECT 1 FROM public.stock_logs WHERE id = p_source_id) THEN
                 RAISE EXCEPTION 'SOURCE_NOT_FOUND: Stock log ID % tidak ditemukan', p_source_id;
             END IF;
+        ELSE
+            RAISE EXCEPTION 'INVALID_SOURCE_TYPE: source_type % tidak didukung', p_source_type;
     END CASE;
 
     -- 4. Idempotency Check (Kembalikan jurnal yang sudah ada jika pernah diposting)
@@ -492,8 +506,10 @@ DECLARE
     v_effective_user_id UUID;
     v_line public.journal_lines%ROWTYPE;
 BEGIN
-    -- 1. Validasi Otorisasi (Hanya Owner & Admin yang Berhak Membalik Jurnal)
-    IF public.get_current_user_role() NOT IN ('owner', 'admin') THEN
+    -- 1. Validasi Otorisasi (Eksplisit Menolak NULL / Unauthenticated)
+    IF public.get_current_user_role() IS NULL 
+       OR public.get_current_user_role() NOT IN ('owner', 'admin') 
+    THEN
         RAISE EXCEPTION 'UNAUTHORIZED: Hanya role owner atau admin yang berhak melakukan pembatalan (VOID) jurnal';
     END IF;
 
@@ -615,3 +631,5 @@ DROP POLICY IF EXISTS p_equity_owner ON public.equity_transactions;
 CREATE POLICY p_equity_owner ON public.equity_transactions FOR ALL TO authenticated
 USING (public.get_current_user_role() = 'owner')
 WITH CHECK (public.get_current_user_role() = 'owner');
+
+COMMIT;
