@@ -5128,6 +5128,57 @@
                         newCostPrice: vi.costPrice > 0 ? vi.costPrice : Number(vi.product.costPrice || 0)
                     }));
 
+                    // RESOLVE COA & PAYMENT ACCOUNTS FOR AUTOMATIC PURCHASE JOURNAL
+                    if (!Array.isArray(this.accountingCOA) || this.accountingCOA.length === 0) {
+                        await this.fetchCOA();
+                    }
+                    if (!Array.isArray(this.accountingPaymentAccounts) || this.accountingPaymentAccounts.length === 0) {
+                        await this.fetchPaymentAccounts();
+                    }
+
+                    const inventoryCoa = (this.accountingCOA || []).find(c => c.code === '1-1210');
+                    if (!inventoryCoa || !inventoryCoa.id) {
+                        alert('Bagan akun Persediaan Barang Dagang (1-1210) tidak ditemukan di database. Pembelian dibatalkan.');
+                        return;
+                    }
+                    const inventoryCoaId = Number(inventoryCoa.id);
+
+                    let poPaymentAccountId = null;
+                    let paymentCoaId = null;
+                    let payableCoaId = null;
+                    let paymentAccObj = null;
+
+                    if (this.newPo.paymentMethod === 'Tunai' || this.newPo.paymentMethod === 'Transfer') {
+                        if (this.newPo.paymentMethod === 'Tunai') {
+                            paymentAccObj = (this.accountingPaymentAccounts || []).find(a => a.type === 'CASH' || a.name === 'Kas Tunai Kasir');
+                        } else if (this.newPo.paymentMethod === 'Transfer') {
+                            paymentAccObj = (this.accountingPaymentAccounts || []).find(a => a.type === 'BANK' || a.name === 'Bank Operasional');
+                        }
+
+                        if (!paymentAccObj) {
+                            alert('Akun pembayaran kas/bank untuk metode ' + this.newPo.paymentMethod + ' tidak terdaftar di sistem. Pembelian dibatalkan.');
+                            return;
+                        }
+
+                        paymentCoaId = Number(paymentAccObj.chart_of_account_id || (paymentAccObj.chart_of_accounts ? paymentAccObj.chart_of_accounts.id : null));
+                        if (!paymentCoaId) {
+                            alert('Akun kas / bank ' + paymentAccObj.name + ' tidak memiliki relasi COA yang valid. Pembelian dibatalkan.');
+                            return;
+                        }
+
+                        poPaymentAccountId = Number(paymentAccObj.id);
+                    } else if (this.newPo.paymentMethod === 'Kredit') {
+                        const payableCoa = (this.accountingCOA || []).find(c => c.code === '2-1110');
+                        if (!payableCoa || !payableCoa.id) {
+                            alert('Bagan akun Hutang Usaha Supplier (2-1110) tidak ditemukan di database. Pembelian dibatalkan.');
+                            return;
+                        }
+                        payableCoaId = Number(payableCoa.id);
+                    } else {
+                        alert('Metode pembayaran "' + this.newPo.paymentMethod + '" tidak dapat dipetakan ke sistem akuntansi. Pembelian dibatalkan.');
+                        return;
+                    }
+
                     const persistedPurchaseStock = await this.persistStockChangesToSupabase(
                         purchaseStockChanges,
                         'PURCHASE',
@@ -5139,7 +5190,7 @@
                     const remaining = this.newPo.paymentMethod === 'Kredit' ? total : 0;
                     const paid = total - remaining;
 
-                    // PERSIST PURCHASE HEADER TO SUPABASE LIVE (public.purchases)
+                    // PERSIST PURCHASE HEADER, ITEMS & POST AUTOMATIC JOURNAL TO SUPABASE LIVE
                     let insertedPurchaseId = null;
                     try {
                         const purchasePayload = {
@@ -5151,7 +5202,7 @@
                             paid_amount: paid,
                             remaining: remaining,
                             payment_method: this.newPo.paymentMethod,
-                            payment_account_id: null,
+                            payment_account_id: poPaymentAccountId,
                             created_by: this.currentUser.id
                         };
 
@@ -5166,24 +5217,8 @@
                             throw new Error('Supabase tidak mengembalikan ID pembelian yang valid.');
                         }
                         insertedPurchaseId = insertedPo.id;
-                    } catch (dbErr) {
-                        console.error('Error persisting purchase to Supabase:', dbErr);
-                        // Rollback stock and cost price if purchase header insert failed
-                        if (purchaseStockChanges.length > 0) {
-                            for (let i = purchaseStockChanges.length - 1; i >= 0; i--) {
-                                const sc = purchaseStockChanges[i];
-                                await supabaseClient
-                                    .from('products')
-                                    .update({ stock: sc.oldStock, cost_price: sc.oldCostPrice })
-                                    .eq('id', sc.product.id);
-                            }
-                        }
-                        alert('Gagal menyimpan data pembelian ke database Supabase: ' + (dbErr.message || dbErr) + '. Pembelian dibatalkan.');
-                        return;
-                    }
 
-                    // PERSIST PURCHASE ITEMS TO SUPABASE LIVE (public.purchase_items)
-                    try {
+                        // INSERT PURCHASE ITEMS
                         const poItemsPayload = validatedItems.map(vi => ({
                             purchase_id: insertedPurchaseId,
                             product_id: Number.isSafeInteger(Number(vi.product.id)) ? Number(vi.product.id) : null,
@@ -5197,16 +5232,67 @@
                             .insert(poItemsPayload);
 
                         if (itemsInsertErr) throw itemsInsertErr;
-                    } catch (itemsErr) {
-                        console.error('Error persisting purchase items to Supabase:', itemsErr);
-                        // Cleanup header and rollback stock if items insert failed
+
+                        // POST AUTOMATIC JOURNAL VIA RPC
+                        let journalLines = [];
+                        if (this.newPo.paymentMethod === 'Tunai' || this.newPo.paymentMethod === 'Transfer') {
+                            journalLines = [
+                                {
+                                    chart_of_account_id: inventoryCoaId,
+                                    debit: total,
+                                    credit: 0,
+                                    description: 'Pembelian persediaan barang PO ' + poNo + ' (' + this.newPo.supplierName + ')'
+                                },
+                                {
+                                    chart_of_account_id: paymentCoaId,
+                                    debit: 0,
+                                    credit: total,
+                                    description: 'Pembayaran kas/bank PO ' + poNo + ' via ' + (paymentAccObj ? paymentAccObj.name : this.newPo.paymentMethod)
+                                }
+                            ];
+                        } else if (this.newPo.paymentMethod === 'Kredit') {
+                            journalLines = [
+                                {
+                                    chart_of_account_id: inventoryCoaId,
+                                    debit: total,
+                                    credit: 0,
+                                    description: 'Pembelian persediaan barang PO ' + poNo + ' (' + this.newPo.supplierName + ')'
+                                },
+                                {
+                                    chart_of_account_id: payableCoaId,
+                                    debit: 0,
+                                    credit: total,
+                                    description: 'Hutang pembelian tempo PO ' + poNo + ' (' + this.newPo.supplierName + ')'
+                                }
+                            ];
+                        }
+
+                        const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry', {
+                            p_journal_date: dateStr,
+                            p_source_type: 'PURCHASE',
+                            p_source_id: insertedPurchaseId,
+                            p_source_code: poNo,
+                            p_description: 'Jurnal Pembelian PO ' + poNo + ' - ' + this.newPo.supplierName,
+                            p_user_id: this.currentUser.id,
+                            p_lines: journalLines
+                        });
+
+                        if (journalError) {
+                            console.error('Error posting journal for purchase:', journalError);
+                            throw new Error('Posting jurnal otomatis pembelian PO ' + poNo + ' ke General Ledger gagal: ' + (journalError.message || journalError));
+                        }
+                    } catch (dbErr) {
+                        console.error('Error persisting purchase or posting journal to Supabase:', dbErr);
+                        // Cleanup purchase header & items if inserted before error occurred
                         if (insertedPurchaseId) {
                             try {
+                                await supabaseClient.from('purchase_items').delete().eq('purchase_id', insertedPurchaseId);
                                 await supabaseClient.from('purchases').delete().eq('id', insertedPurchaseId);
                             } catch (cleanErr) {
-                                console.error('Purchase header cleanup error:', cleanErr);
+                                console.error('Purchase cleanup error:', cleanErr);
                             }
                         }
+                        // Rollback stock and cost price
                         if (purchaseStockChanges.length > 0) {
                             for (let i = purchaseStockChanges.length - 1; i >= 0; i--) {
                                 const sc = purchaseStockChanges[i];
@@ -5216,7 +5302,7 @@
                                     .eq('id', sc.product.id);
                             }
                         }
-                        alert('Gagal menyimpan rincian item pembelian ke database Supabase: ' + (itemsErr.message || itemsErr) + '. Pembelian dibatalkan.');
+                        alert('Gagal menyimpan data pembelian / posting jurnal ke database: ' + (dbErr.message || dbErr) + '. Pembelian dibatalkan.');
                         return;
                     }
 
