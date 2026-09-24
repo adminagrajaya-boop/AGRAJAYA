@@ -3496,6 +3496,7 @@
                     if (this.isAuthenticated) {
                         await this.loadMasterDataFromSupabase();
                         await this.loadAccountingDataFromSupabase();
+                        this.initRealtimeSubscription();
                     }
                 },
 
@@ -3565,6 +3566,7 @@
                                 await this.loadAccountingDataFromSupabase();
                             }
                         } else if (event === 'SIGNED_OUT') {
+                            this.cleanupRealtimeSubscription();
                             this.session = null;
                             this.currentUser = null;
                             this.isAuthenticated = false;
@@ -3633,12 +3635,101 @@
                     if (reason) {
                         alert(reason);
                     }
+                    this.cleanupRealtimeSubscription();
                     if (supabaseClient) {
                         await supabaseClient.auth.signOut();
                     }
                     this.session = null;
                     this.currentUser = null;
                     this.isAuthenticated = false;
+                },
+
+                initRealtimeSubscription() {
+                    if (!supabaseClient || !this.isAuthenticated || !this.currentUser) return;
+                    if (this.realtimeChannel) return;
+
+                    try {
+                        this.realtimeChannel = supabaseClient.channel('pos-accounting-realtime-sync');
+
+                        const targetTables = [
+                            'transactions',
+                            'invoices',
+                            'receivables',
+                            'purchases',
+                            'payables',
+                            'payment_history',
+                            'products',
+                            'stock_logs',
+                            'journal_entries',
+                            'journal_lines',
+                            'expenses',
+                            'equity_transactions'
+                        ];
+
+                        targetTables.forEach(tableName => {
+                            this.realtimeChannel.on(
+                                'postgres_changes',
+                                { event: '*', schema: 'public', table: tableName },
+                                (payload) => {
+                                    this.handleRealtimeDataChange(tableName, payload);
+                                }
+                            );
+                        });
+
+                        this.realtimeChannel.subscribe((status, err) => {
+                            if (status === 'SUBSCRIBED') {
+                                console.log('Supabase Realtime Sync active for POS & Accounting.');
+                            } else if (status === 'CHANNEL_ERROR') {
+                                console.warn('Supabase Realtime Channel Warning/Error:', err);
+                            } else if (status === 'TIMED_OUT') {
+                                console.warn('Supabase Realtime Subscription Timed Out');
+                            } else if (status === 'CLOSED') {
+                                console.log('Supabase Realtime Channel Closed');
+                            }
+                        });
+                    } catch (e) {
+                        console.error('Error initializing Realtime Subscription:', e);
+                        this.realtimeChannel = null;
+                    }
+                },
+
+                handleRealtimeDataChange(tableName, payload) {
+                    if (this.realtimeDebounceTimer) {
+                        clearTimeout(this.realtimeDebounceTimer);
+                    }
+
+                    this.realtimeDebounceTimer = setTimeout(async () => {
+                        this.realtimeDebounceTimer = null;
+                        try {
+                            const accountingTables = ['journal_entries', 'journal_lines', 'expenses', 'equity_transactions', 'payment_accounts', 'chart_of_accounts'];
+                            const masterTables = ['products', 'stock_logs', 'transactions', 'invoices', 'receivables', 'purchases', 'payables', 'payment_history'];
+
+                            if (accountingTables.includes(tableName)) {
+                                await this.loadAccountingDataFromSupabase();
+                            }
+                            if (masterTables.includes(tableName)) {
+                                await this.loadMasterDataFromSupabase();
+                                await this.loadAccountingDataFromSupabase();
+                            }
+                        } catch (err) {
+                            console.error('Error refreshing data from Realtime event:', err);
+                        }
+                    }, 500);
+                },
+
+                cleanupRealtimeSubscription() {
+                    if (this.realtimeDebounceTimer) {
+                        clearTimeout(this.realtimeDebounceTimer);
+                        this.realtimeDebounceTimer = null;
+                    }
+                    if (this.realtimeChannel && supabaseClient) {
+                        try {
+                            supabaseClient.removeChannel(this.realtimeChannel);
+                        } catch (e) {
+                            console.warn('Error removing Realtime channel:', e);
+                        }
+                    }
+                    this.realtimeChannel = null;
                 },
 
                 async loadMasterDataFromSupabase() {
