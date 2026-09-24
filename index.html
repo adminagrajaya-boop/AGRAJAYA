@@ -3147,9 +3147,10 @@
                         class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors">
                         Batal
                     </button>
-                    <button @click="saveExpense()"
-                        class="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs shadow-md transition-colors">
-                        Simpan Beban
+                    <button @click="saveExpense()" :disabled="isSavingExpense"
+                        class="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow-md transition-colors flex items-center justify-center gap-2">
+                        <i x-show="isSavingExpense" class="fa-solid fa-spinner fa-spin text-xs"></i>
+                        <span x-text="isSavingExpense ? 'Menyimpan & Posting...' : 'Simpan Beban'"></span>
                     </button>
                 </div>
             </div>
@@ -3235,9 +3236,10 @@
                         class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors">
                         Batal
                     </button>
-                    <button @click="saveEquity()"
-                        class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-xs shadow-md transition-colors">
-                        Simpan Transaksi
+                    <button @click="saveEquity()" :disabled="isSavingEquity"
+                        class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow-md transition-colors flex items-center justify-center gap-2">
+                        <i x-show="isSavingEquity" class="fa-solid fa-spinner fa-spin text-xs"></i>
+                        <span x-text="isSavingEquity ? 'Menyimpan & Posting...' : 'Simpan Transaksi'"></span>
                     </button>
                 </div>
             </div>
@@ -3280,6 +3282,8 @@
                 accountingSubTab: 'dashboard',
                 accountingLoading: false,
                 accountingError: null,
+                isSavingExpense: false,
+                isSavingEquity: false,
                 accountingCOA: [],
                 accountingPaymentAccounts: [],
                 accountingExpenses: [],
@@ -4309,11 +4313,37 @@
                     }
 
                     // 7. PROSES MUTASI DATA (HANYA SETELAH SELURUH VALIDASI PAS)
+                    // 7.1 VALIDASI AUTH SESSION UNTUK PERSISTENCE OPERASIONAL
+                    if (!supabaseClient || !this.isAuthenticated || !this.currentUser || !this.currentUser.id) {
+                        alert('Sesi pengguna tidak siap atau belum terautentikasi. Transaksi dibatalkan.');
+                        return;
+                    }
+
                     const code = this.generateCode('TRX', this.transactionHistory, 'trxCounter');
                     const invNo = this.generateCode('INV', this.invoiceList, 'invCounter');
                     const dateStr = this.getLocalDateString();
+                    const partyNameStr = this.customerName ? `${this.customerName} (${this.customerFarm || 'Kandang'})` : 'Pelanggan Umum';
 
-                    // Persist stock changes to Supabase before mutating local state.
+                    // 7.2 PREVENT DUPLICATE RECORD (Cek kode transaksi di Supabase)
+                    try {
+                        const { data: existingTrx, error: checkError } = await supabaseClient
+                            .from('transactions')
+                            .select('id')
+                            .eq('trx_code', code)
+                            .maybeSingle();
+
+                        if (checkError) throw checkError;
+                        if (existingTrx) {
+                            alert('Kode transaksi ' + code + ' sudah terdaftar di database. Silakan coba kembali.');
+                            return;
+                        }
+                    } catch (chkErr) {
+                        console.error('Cek duplicate transaction error:', chkErr);
+                        alert('Gagal memverifikasi status transaksi di database: ' + (chkErr.message || chkErr) + '. Transaksi dibatalkan.');
+                        return;
+                    }
+
+                    // 7.3 PERSIST STOCK CHANGES TO SUPABASE FIRST
                     const stockChanges = cartItemsSnapshot
                         .map(cartItem => {
                             const prod = this.products.find(p => Number(p.id) === Number(cartItem.id));
@@ -4329,7 +4359,50 @@
 
                     if (stockChanges.length > 0) {
                         const persisted = await this.persistStockChangesToSupabase(stockChanges, 'OUT', code, 'Penjualan');
-                        if (!persisted) return;
+                        if (!persisted) return; // Abort before inserting transaction row if stock update fails
+                    }
+
+                    // 7.4 PERSIST POS TRANSACTION TO SUPABASE LIVE (public.transactions)
+                    let insertedTrxId = null;
+                    try {
+                        const trxPayload = {
+                            trx_code: code,
+                            transaction_type: 'Penjualan',
+                            party_name: partyNameStr,
+                            transaction_date: dateStr,
+                            status: 'VALID',
+                            total: grandTotal,
+                            profit: grossProfit,
+                            payment_method: this.paymentMethod,
+                            items: cartItemsSnapshot,
+                            created_by: this.currentUser.id
+                        };
+
+                        const { data: insertedTrx, error: insertTrxError } = await supabaseClient
+                            .from('transactions')
+                            .insert(trxPayload)
+                            .select('id, trx_code')
+                            .single();
+
+                        if (insertTrxError) throw insertTrxError;
+                        if (!insertedTrx || !insertedTrx.id) {
+                            throw new Error('Supabase tidak mengembalikan ID transaksi yang valid.');
+                        }
+                        insertedTrxId = insertedTrx.id;
+                    } catch (dbErr) {
+                        console.error('Error persisting transaction to Supabase:', dbErr);
+                        // Rollback stock updates if transaction insert failed
+                        if (stockChanges.length > 0) {
+                            for (let i = stockChanges.length - 1; i >= 0; i--) {
+                                const sc = stockChanges[i];
+                                await supabaseClient
+                                    .from('products')
+                                    .update({ stock: sc.oldStock })
+                                    .eq('id', sc.product.id);
+                            }
+                        }
+                        alert('Gagal menyimpan transaksi ke database Supabase: ' + (dbErr.message || dbErr) + '. Transaksi dibatalkan dan keranjang tidak dihapus.');
+                        return;
                     }
 
                     stockChanges.forEach(change => {
@@ -4344,14 +4417,15 @@
                         });
                     });
 
-                    // Catat Transaksi
+                    // 7.5 UPDATE LOCAL STATE (TERMASUK LOCALSTORAGE COMPATIBILITY)
                     const trx = {
-                        id: Date.now(),
+                        id: insertedTrxId || Date.now(),
+                        supabaseId: insertedTrxId,
                         code: code,
                         date: dateStr,
                         type: 'Jual',
                         paymentMethod: this.paymentMethod,
-                        partyName: this.customerName ? `${this.customerName} (${this.customerFarm || 'Kandang'})` : 'Pelanggan Umum',
+                        partyName: partyNameStr,
                         items: cartItemsSnapshot,
                         total: grandTotal,
                         profit: grossProfit,
@@ -6701,6 +6775,7 @@
                         alert('Hanya Owner dan Admin yang dapat mencatat beban operasional.');
                         return;
                     }
+                    if (this.isSavingExpense) return;
 
                     const date = this.expenseForm.date;
                     const coaId = Number(this.expenseForm.chart_of_account_id);
@@ -6735,12 +6810,26 @@
                         return;
                     }
 
+                    // 1. Resolve payment account -> COA (Strict validation)
+                    const paymentAcc = (this.accountingPaymentAccounts || []).find(p => Number(p.id) === payAccId);
+                    const paymentCoaId = paymentAcc ? Number(paymentAcc.chart_of_account_id || (paymentAcc.chart_of_accounts ? paymentAcc.chart_of_accounts.id : null)) : null;
+
+                    if (!paymentAcc || !paymentCoaId) {
+                        alert('Akun kas / bank yang dipilih tidak memiliki relasi bagan akun (COA) yang valid. Transaksi dibatalkan.');
+                        return;
+                    }
+
+                    const expenseCoa = (this.accountingCOA || []).find(c => Number(c.id) === coaId);
+                    const expenseCoaName = expenseCoa ? (expenseCoa.code + ' ' + expenseCoa.name) : 'Beban Operasional';
+
                     const ym = date.replace(/-/g, '').slice(0, 6);
                     const randPart = String(Math.floor(1000 + Math.random() * 9000));
                     const expenseNo = 'EXP-' + ym + '-' + randPart;
 
+                    this.isSavingExpense = true;
                     try {
-                        const { error } = await supabaseClient
+                        // 2. Insert expense record into Supabase
+                        const { data: insertedExpense, error: expError } = await supabaseClient
                             .from('expenses')
                             .insert({
                                 expense_no: expenseNo,
@@ -6753,15 +6842,56 @@
                                 note: note,
                                 status: 'VALID',
                                 created_by: this.currentUser.id
-                            });
+                            })
+                            .select('id, expense_no')
+                            .single();
 
-                        if (error) throw error;
-                        alert('Beban operasional ' + expenseNo + ' sebesar ' + this.formatRupiah(amount) + ' berhasil dicatat.');
+                        if (expError) throw expError;
+                        if (!insertedExpense || !insertedExpense.id) {
+                            throw new Error('Gagal mendapatkan ID beban dari database.');
+                        }
+
+                        // 3. Post Automatic Double-Entry Journal via Database RPC
+                        const journalLines = [
+                            {
+                                chart_of_account_id: coaId,
+                                debit: amount,
+                                credit: 0,
+                                description: 'Beban ' + payee + ': ' + note
+                            },
+                            {
+                                chart_of_account_id: paymentCoaId,
+                                debit: 0,
+                                credit: amount,
+                                description: 'Pembayaran ' + expenseNo + ' via ' + (paymentAcc.name || 'Kas/Bank')
+                            }
+                        ];
+
+                        const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry', {
+                            p_journal_date: date,
+                            p_source_type: 'EXPENSE',
+                            p_source_id: insertedExpense.id,
+                            p_source_code: expenseNo,
+                            p_description: 'Pengeluaran Beban ' + expenseNo + ' - ' + payee + ' (' + expenseCoaName + ')',
+                            p_user_id: this.currentUser.id,
+                            p_lines: journalLines
+                        });
+
+                        if (journalError) {
+                            console.error('Error posting journal for expense:', journalError);
+                            alert('Catatan beban ' + expenseNo + ' berhasil disimpan di data operasional, namun posting jurnal otomatis gagal: ' + (journalError.message || journalError) + '. Silakan periksa koneksi atau hubungi administrator.');
+                        } else {
+                            const jrnNo = (Array.isArray(journalData) && journalData.length > 0) ? journalData[0].journal_no : 'POSTED';
+                            alert('Beban operasional ' + expenseNo + ' sebesar ' + this.formatRupiah(amount) + ' berhasil dicatat dan diposting ke Jurnal Umum (' + jrnNo + ').');
+                        }
+
                         this.showExpenseModal = false;
-                        await this.fetchExpenses();
+                        await this.loadAccountingDataFromSupabase();
                     } catch (err) {
                         console.error('Error saving expense:', err);
                         alert('Gagal menyimpan beban operasional: ' + (err.message || err));
+                    } finally {
+                        this.isSavingExpense = false;
                     }
                 },
 
@@ -6792,6 +6922,7 @@
                         alert('Hanya Owner yang berhak mencatat transaksi Modal atau Prive.');
                         return;
                     }
+                    if (this.isSavingEquity) return;
 
                     const date = this.equityForm.date;
                     const type = this.equityForm.transaction_type;
@@ -6825,13 +6956,27 @@
                         return;
                     }
 
+                    // 1. Resolve payment account -> COA (Strict validation)
+                    const paymentAcc = (this.accountingPaymentAccounts || []).find(p => Number(p.id) === payAccId);
+                    const paymentCoaId = paymentAcc ? Number(paymentAcc.chart_of_account_id || (paymentAcc.chart_of_accounts ? paymentAcc.chart_of_accounts.id : null)) : null;
+
+                    if (!paymentAcc || !paymentCoaId) {
+                        alert('Akun kas / bank yang dipilih tidak memiliki relasi bagan akun (COA) yang valid. Transaksi dibatalkan.');
+                        return;
+                    }
+
+                    const equityCoa = (this.accountingCOA || []).find(c => Number(c.id) === coaId);
+                    const equityCoaName = equityCoa ? (equityCoa.code + ' ' + equityCoa.name) : (type === 'CAPITAL_IN' ? 'Modal Pemilik' : 'Prive Pemilik');
+
                     const ym = date.replace(/-/g, '').slice(0, 6);
                     const randPart = String(Math.floor(1000 + Math.random() * 9000));
                     const prefix = type === 'CAPITAL_IN' ? 'MOD' : 'PRV';
                     const equityNo = prefix + '-' + ym + '-' + randPart;
 
+                    this.isSavingEquity = true;
                     try {
-                        const { error } = await supabaseClient
+                        // 2. Insert equity record into Supabase
+                        const { data: insertedEquity, error: eqError } = await supabaseClient
                             .from('equity_transactions')
                             .insert({
                                 equity_no: equityNo,
@@ -6843,15 +6988,76 @@
                                 note: note,
                                 status: 'VALID',
                                 created_by: this.currentUser.id
-                            });
+                            })
+                            .select('id, equity_no')
+                            .single();
 
-                        if (error) throw error;
-                        alert('Transaksi ekuitas ' + equityNo + ' sebesar ' + this.formatRupiah(amount) + ' berhasil dicatat.');
+                        if (eqError) throw eqError;
+                        if (!insertedEquity || !insertedEquity.id) {
+                            throw new Error('Gagal mendapatkan ID transaksi ekuitas dari database.');
+                        }
+
+                        // 3. Post Automatic Double-Entry Journal via Database RPC
+                        // CAPITAL_IN: DEBIT Kas/Bank, CREDIT Modal Pemilik
+                        // DRAWING_OUT: DEBIT Prive Pemilik, CREDIT Kas/Bank
+                        let journalLines;
+                        if (type === 'CAPITAL_IN') {
+                            journalLines = [
+                                {
+                                    chart_of_account_id: paymentCoaId,
+                                    debit: amount,
+                                    credit: 0,
+                                    description: 'Penerimaan modal kas/bank via ' + (paymentAcc.name || 'Kas/Bank')
+                                },
+                                {
+                                    chart_of_account_id: coaId,
+                                    debit: 0,
+                                    credit: amount,
+                                    description: 'Setoran modal pemilik: ' + note
+                                }
+                            ];
+                        } else {
+                            journalLines = [
+                                {
+                                    chart_of_account_id: coaId,
+                                    debit: amount,
+                                    credit: 0,
+                                    description: 'Penarikan prive pemilik: ' + note
+                                },
+                                {
+                                    chart_of_account_id: paymentCoaId,
+                                    debit: 0,
+                                    credit: amount,
+                                    description: 'Pengeluaran kas/bank prive via ' + (paymentAcc.name || 'Kas/Bank')
+                                }
+                            ];
+                        }
+
+                        const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry', {
+                            p_journal_date: date,
+                            p_source_type: 'EQUITY',
+                            p_source_id: insertedEquity.id,
+                            p_source_code: equityNo,
+                            p_description: 'Transaksi Ekuitas ' + equityNo + ' - ' + (type === 'CAPITAL_IN' ? 'Setor Modal' : 'Tarik Prive') + ' (' + equityCoaName + ')',
+                            p_user_id: this.currentUser.id,
+                            p_lines: journalLines
+                        });
+
+                        if (journalError) {
+                            console.error('Error posting journal for equity:', journalError);
+                            alert('Transaksi ekuitas ' + equityNo + ' berhasil disimpan di data operasional, namun posting jurnal otomatis gagal: ' + (journalError.message || journalError) + '. Silakan periksa koneksi atau hubungi administrator.');
+                        } else {
+                            const jrnNo = (Array.isArray(journalData) && journalData.length > 0) ? journalData[0].journal_no : 'POSTED';
+                            alert('Transaksi ekuitas ' + equityNo + ' sebesar ' + this.formatRupiah(amount) + ' berhasil dicatat dan diposting ke Jurnal Umum (' + jrnNo + ').');
+                        }
+
                         this.showEquityModal = false;
-                        await this.fetchEquity();
+                        await this.loadAccountingDataFromSupabase();
                     } catch (err) {
                         console.error('Error saving equity transaction:', err);
                         alert('Gagal menyimpan transaksi ekuitas: ' + (err.message || err));
+                    } finally {
+                        this.isSavingEquity = false;
                     }
                 },
 
