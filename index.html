@@ -5505,14 +5505,53 @@
                     const newPaid = pPaid + payAmt;
                     const dateStr = this.getLocalDateString();
 
-                    // 6. PERSIST PAYMENT HISTORY TO SUPABASE LIVE (public.payment_history)
+                    // RESOLVE COA & PAYMENT ACCOUNTS FOR RECEIVABLE SETTLEMENT JOURNAL
+                    if (!Array.isArray(this.accountingCOA) || this.accountingCOA.length === 0) {
+                        await this.fetchCOA();
+                    }
+                    if (!Array.isArray(this.accountingPaymentAccounts) || this.accountingPaymentAccounts.length === 0) {
+                        await this.fetchPaymentAccounts();
+                    }
+
+                    const piutangCoa = (this.accountingCOA || []).find(c => c.code === '1-1110');
+                    if (!piutangCoa || !piutangCoa.id) {
+                        alert('Bagan akun Piutang Usaha (1-1110) tidak ditemukan di database. Pembayaran dibatalkan.');
+                        return;
+                    }
+                    const piutangCoaId = Number(piutangCoa.id);
+
+                    const payMethod = inv.paymentMethod || 'Tunai';
+                    let paymentAccObj = null;
+                    if (payMethod === 'Transfer') {
+                        paymentAccObj = (this.accountingPaymentAccounts || []).find(a => a.type === 'BANK' || a.name === 'Bank Operasional');
+                    } else if (payMethod === 'QRIS') {
+                        paymentAccObj = (this.accountingPaymentAccounts || []).find(a => a.type === 'GATEWAY' || a.name === 'Penampung QRIS');
+                    } else {
+                        paymentAccObj = (this.accountingPaymentAccounts || []).find(a => a.type === 'CASH' || a.name === 'Kas Tunai Kasir');
+                    }
+
+                    if (!paymentAccObj) {
+                        alert('Akun pembayaran kas/bank untuk metode ' + payMethod + ' tidak terdaftar di sistem. Pembayaran dibatalkan.');
+                        return;
+                    }
+
+                    const paymentCoaId = Number(paymentAccObj.chart_of_account_id || (paymentAccObj.chart_of_accounts ? paymentAccObj.chart_of_accounts.id : null));
+                    if (!paymentCoaId) {
+                        alert('Akun kas / bank ' + paymentAccObj.name + ' tidak memiliki relasi COA yang valid. Pembayaran dibatalkan.');
+                        return;
+                    }
+                    const payAccountId = Number(paymentAccObj.id);
+
+                    // 6. PERSIST PAYMENT HISTORY, RECEIVABLES & INVOICES WITH AUTOMATIC JOURNAL
                     let insertedPayHistId = null;
+                    let remoteRecId = null;
                     try {
                         const payHistPayload = {
                             inv_no: inv.invNo,
                             customer_name: inv.customerName || this.activePiutang.customerName || 'Pelanggan',
                             payment_date: dateStr,
-                            payment_method: inv.paymentMethod || 'Tunai',
+                            payment_method: payMethod,
+                            payment_account_id: payAccountId,
                             amount: payAmt,
                             payment_type: 'RECEIVABLE',
                             invoice_id: Number.isSafeInteger(Number(inv.supabaseId || inv.id)) ? Number(inv.supabaseId || inv.id) : null,
@@ -5527,15 +5566,9 @@
                             .single();
 
                         if (histErr) throw histErr;
-                        if (insertedHist && insertedHist.id) insertedPayHistId = insertedHist.id;
-                    } catch (histErr) {
-                        console.error('Error persisting payment_history to Supabase:', histErr);
-                        alert('Gagal menyimpan catatan riwayat pembayaran ke Supabase: ' + (histErr.message || histErr) + '. Pembayaran dibatalkan.');
-                        return;
-                    }
+                        if (!insertedHist || !insertedHist.id) throw new Error('Gagal mendapatkan ID riwayat pembayaran.');
+                        insertedPayHistId = insertedHist.id;
 
-                    // 7. PERSIST RECEIVABLES & INVOICES TO SUPABASE LIVE
-                    try {
                         // Update public.receivables
                         const { data: remoteRec } = await supabaseClient
                             .from('receivables')
@@ -5544,6 +5577,7 @@
                             .maybeSingle();
 
                         if (remoteRec) {
+                            remoteRecId = remoteRec.id;
                             await supabaseClient
                                 .from('receivables')
                                 .update({
@@ -5554,7 +5588,6 @@
                                 })
                                 .eq('id', remoteRec.id);
                         } else {
-                            // Insert row if doesn't exist yet
                             await supabaseClient
                                 .from('receivables')
                                 .insert({
@@ -5578,17 +5611,54 @@
                                 status: newStatus
                             })
                             .eq('inv_no', inv.invNo);
+
+                        // POST AUTOMATIC JOURNAL VIA RPC
+                        const journalLines = [
+                            {
+                                chart_of_account_id: paymentCoaId,
+                                debit: payAmt,
+                                credit: 0,
+                                description: 'Penerimaan pembayaran piutang ' + inv.invNo + ' via ' + (paymentAccObj ? paymentAccObj.name : payMethod)
+                            },
+                            {
+                                chart_of_account_id: piutangCoaId,
+                                debit: 0,
+                                credit: payAmt,
+                                description: 'Pelunasan/cicilan piutang ' + inv.invNo + ' (' + (inv.customerName || 'Pelanggan') + ')'
+                            }
+                        ];
+
+                        const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry', {
+                            p_journal_date: dateStr,
+                            p_source_type: 'PAYMENT',
+                            p_source_id: insertedPayHistId,
+                            p_source_code: 'PAY-' + inv.invNo,
+                            p_description: 'Jurnal Pembayaran Piutang ' + inv.invNo + ' - ' + (inv.customerName || 'Pelanggan'),
+                            p_user_id: this.currentUser.id,
+                            p_lines: journalLines
+                        });
+
+                        if (journalError) {
+                            console.error('Error posting journal for receivable payment:', journalError);
+                            throw new Error('Posting jurnal otomatis pembayaran piutang ' + inv.invNo + ' ke General Ledger gagal: ' + (journalError.message || journalError));
+                        }
                     } catch (recErr) {
-                        console.error('Error updating remote receivables/invoices:', recErr);
-                        // Cleanup payment_history row if update failed
+                        console.error('Error processing receivable payment or journal:', recErr);
+                        // Revert remote state if update or journal failed
+                        if (remoteRecId) {
+                            try {
+                                await supabaseClient.from('receivables').update({ paid: pPaid, remaining: pRemaining, status: this.activePiutang.status }).eq('id', remoteRecId);
+                            } catch (rErr) { console.error('Revert receivables error:', rErr); }
+                        }
+                        try {
+                            await supabaseClient.from('invoices').update({ paid_amount: iPaid, remaining: iRemaining, status: inv.status }).eq('inv_no', inv.invNo);
+                        } catch (iErr) { console.error('Revert invoices error:', iErr); }
                         if (insertedPayHistId) {
                             try {
                                 await supabaseClient.from('payment_history').delete().eq('id', insertedPayHistId);
-                            } catch (cErr) {
-                                console.error('Cleanup payment_history error:', cErr);
-                            }
+                            } catch (cErr) { console.error('Cleanup payment_history error:', cErr); }
                         }
-                        alert('Gagal memperbarui status piutang di database Supabase: ' + (recErr.message || recErr) + '. Pembayaran dibatalkan.');
+                        alert('Gagal memproses pembayaran / posting jurnal piutang di database: ' + (recErr.message || recErr) + '. Pembayaran dibatalkan.');
                         return;
                     }
 
@@ -5710,14 +5780,53 @@
                     const newStatus = newRemaining === 0 ? 'Lunas' : 'Sebagian';
                     const dateStr = this.getLocalDateString();
 
-                    // 7. PERSIST PAYMENT HISTORY TO SUPABASE LIVE (public.payment_history)
+                    // RESOLVE COA & PAYMENT ACCOUNTS FOR PAYABLE SETTLEMENT JOURNAL
+                    if (!Array.isArray(this.accountingCOA) || this.accountingCOA.length === 0) {
+                        await this.fetchCOA();
+                    }
+                    if (!Array.isArray(this.accountingPaymentAccounts) || this.accountingPaymentAccounts.length === 0) {
+                        await this.fetchPaymentAccounts();
+                    }
+
+                    const payableCoa = (this.accountingCOA || []).find(c => c.code === '2-1110');
+                    if (!payableCoa || !payableCoa.id) {
+                        alert('Bagan akun Hutang Usaha Supplier (2-1110) tidak ditemukan di database. Pembayaran dibatalkan.');
+                        return;
+                    }
+                    const payableCoaId = Number(payableCoa.id);
+
+                    const payMethod = po.paymentMethod || 'Tunai';
+                    let paymentAccObj = null;
+                    if (payMethod === 'Transfer') {
+                        paymentAccObj = (this.accountingPaymentAccounts || []).find(a => a.type === 'BANK' || a.name === 'Bank Operasional');
+                    } else if (payMethod === 'QRIS') {
+                        paymentAccObj = (this.accountingPaymentAccounts || []).find(a => a.type === 'GATEWAY' || a.name === 'Penampung QRIS');
+                    } else {
+                        paymentAccObj = (this.accountingPaymentAccounts || []).find(a => a.type === 'CASH' || a.name === 'Kas Tunai Kasir');
+                    }
+
+                    if (!paymentAccObj) {
+                        alert('Akun pembayaran kas/bank untuk metode ' + payMethod + ' tidak terdaftar di sistem. Pembayaran dibatalkan.');
+                        return;
+                    }
+
+                    const paymentCoaId = Number(paymentAccObj.chart_of_account_id || (paymentAccObj.chart_of_accounts ? paymentAccObj.chart_of_accounts.id : null));
+                    if (!paymentCoaId) {
+                        alert('Akun kas / bank ' + paymentAccObj.name + ' tidak memiliki relasi COA yang valid. Pembayaran dibatalkan.');
+                        return;
+                    }
+                    const payAccountId = Number(paymentAccObj.id);
+
+                    // 7. PERSIST PAYMENT HISTORY, PAYABLES & PURCHASES WITH AUTOMATIC JOURNAL
                     let insertedPayHistId = null;
+                    let remotePayId = null;
                     try {
                         const payHistPayload = {
                             po_no: po.poNo,
                             supplier_name: po.supplierName || this.activeHutang.supplierName || 'Supplier',
                             payment_date: dateStr,
-                            payment_method: po.paymentMethod || 'Tunai',
+                            payment_method: payMethod,
+                            payment_account_id: payAccountId,
                             amount: payAmt,
                             payment_type: 'PAYABLE',
                             purchase_id: Number.isSafeInteger(Number(po.supabaseId || po.id)) ? Number(po.supabaseId || po.id) : null,
@@ -5732,15 +5841,9 @@
                             .single();
 
                         if (histErr) throw histErr;
-                        if (insertedHist && insertedHist.id) insertedPayHistId = insertedHist.id;
-                    } catch (histErr) {
-                        console.error('Error persisting payable payment_history to Supabase:', histErr);
-                        alert('Gagal menyimpan catatan riwayat pembayaran hutang ke Supabase: ' + (histErr.message || histErr) + '. Pembayaran dibatalkan.');
-                        return;
-                    }
+                        if (!insertedHist || !insertedHist.id) throw new Error('Gagal mendapatkan ID riwayat pembayaran.');
+                        insertedPayHistId = insertedHist.id;
 
-                    // 8. PERSIST PAYABLES & PURCHASES TO SUPABASE LIVE
-                    try {
                         // Update public.payables
                         const { data: remotePay } = await supabaseClient
                             .from('payables')
@@ -5749,6 +5852,7 @@
                             .maybeSingle();
 
                         if (remotePay) {
+                            remotePayId = remotePay.id;
                             await supabaseClient
                                 .from('payables')
                                 .update({
@@ -5759,7 +5863,6 @@
                                 })
                                 .eq('id', remotePay.id);
                         } else {
-                            // Insert row if doesn't exist yet
                             await supabaseClient
                                 .from('payables')
                                 .insert({
@@ -5782,17 +5885,54 @@
                                 remaining: newRemaining
                             })
                             .eq('po_no', po.poNo);
+
+                        // POST AUTOMATIC JOURNAL VIA RPC
+                        const journalLines = [
+                            {
+                                chart_of_account_id: payableCoaId,
+                                debit: payAmt,
+                                credit: 0,
+                                description: 'Pelunasan/cicilan hutang PO ' + po.poNo + ' (' + (po.supplierName || 'Supplier') + ')'
+                            },
+                            {
+                                chart_of_account_id: paymentCoaId,
+                                debit: 0,
+                                credit: payAmt,
+                                description: 'Pengeluaran kas/bank bayar hutang PO ' + po.poNo + ' via ' + (paymentAccObj ? paymentAccObj.name : payMethod)
+                            }
+                        ];
+
+                        const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry', {
+                            p_journal_date: dateStr,
+                            p_source_type: 'PAYMENT',
+                            p_source_id: insertedPayHistId,
+                            p_source_code: 'PAY-' + po.poNo,
+                            p_description: 'Jurnal Pembayaran Hutang PO ' + po.poNo + ' - ' + (po.supplierName || 'Supplier'),
+                            p_user_id: this.currentUser.id,
+                            p_lines: journalLines
+                        });
+
+                        if (journalError) {
+                            console.error('Error posting journal for payable payment:', journalError);
+                            throw new Error('Posting jurnal otomatis pembayaran hutang PO ' + po.poNo + ' ke General Ledger gagal: ' + (journalError.message || journalError));
+                        }
                     } catch (payErr) {
-                        console.error('Error updating remote payables/purchases:', payErr);
-                        // Cleanup payment_history row if update failed
+                        console.error('Error processing payable payment or journal:', payErr);
+                        // Revert remote state if update or journal failed
+                        if (remotePayId) {
+                            try {
+                                await supabaseClient.from('payables').update({ paid: hPaid, remaining: hRemaining, status: this.activeHutang.status }).eq('id', remotePayId);
+                            } catch (pErr) { console.error('Revert payables error:', pErr); }
+                        }
+                        try {
+                            await supabaseClient.from('purchases').update({ paid_amount: poPaid, remaining: poRemaining }).eq('po_no', po.poNo);
+                        } catch (poErr) { console.error('Revert purchases error:', poErr); }
                         if (insertedPayHistId) {
                             try {
                                 await supabaseClient.from('payment_history').delete().eq('id', insertedPayHistId);
-                            } catch (cErr) {
-                                console.error('Cleanup payment_history error:', cErr);
-                            }
+                            } catch (cErr) { console.error('Cleanup payment_history error:', cErr); }
                         }
-                        alert('Gagal memperbarui status hutang di database Supabase: ' + (payErr.message || payErr) + '. Pembayaran dibatalkan.');
+                        alert('Gagal memproses pembayaran / posting jurnal hutang di database: ' + (payErr.message || payErr) + '. Pembayaran dibatalkan.');
                         return;
                     }
 
