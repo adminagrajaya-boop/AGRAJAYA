@@ -5993,12 +5993,70 @@
                         return;
                     }
 
-                    if (!confirm(`Apakah Anda yakin ingin membatalkan (VOID) transaksi ${trx.code}? Stok barang akan dikembalikan ke database Supabase.`)) {
+                    if (!confirm(`Apakah Anda yakin ingin membatalkan (VOID) transaksi ${trx.code}? Stok barang akan dikembalikan dan jurnal akuntansi akan dibalik (reversal).`)) {
                         return;
                     }
 
                     this.isVoiding = true;
                     try {
+                        // 1. CARI ORIGINAL JOURNAL UNTUK REVERSAL
+                        const trxId = Number(trx.supabaseId || trx.id);
+                        let origJournalId = null;
+
+                        if (Number.isSafeInteger(trxId) && trxId > 0) {
+                            const { data: origJournal, error: lookupErr } = await supabaseClient
+                                .from('journal_entries')
+                                .select('id, journal_no, status, is_reversal')
+                                .eq('source_type', 'TRANSACTION')
+                                .eq('source_id', trxId)
+                                .eq('is_reversal', false)
+                                .eq('status', 'POSTED')
+                                .maybeSingle();
+
+                            if (lookupErr) {
+                                console.error('Error looking up original journal:', lookupErr);
+                                alert('Gagal memverifikasi status jurnal transaksi di database: ' + (lookupErr.message || lookupErr) + '. Pembatalan dibatalkan.');
+                                return;
+                            }
+
+                            if (origJournal && origJournal.id) {
+                                origJournalId = origJournal.id;
+                            }
+                        }
+
+                        // 2. EKSEKUSI REVERSAL JOURNAL VIA RPC DIBATALKAN JIKA RPC GAGAL
+                        if (origJournalId) {
+                            const { data: revResult, error: revErr } = await supabaseClient.rpc('reverse_journal_entry', {
+                                p_original_journal_id: origJournalId,
+                                p_user_id: this.currentUser.id,
+                                p_reversal_reason: 'Void Transaksi Penjualan ' + trx.code
+                            });
+
+                            if (revErr) {
+                                console.error('Error reversing journal entry:', revErr);
+                                alert('Gagal membuat jurnal pembalik (reversal) di database: ' + (revErr.message || revErr) + '. Pembatalan transaksi dibatalkan.');
+                                return;
+                            }
+                        }
+
+                        // 3. UPDATE TRANSACTION STATUS DI SUPABASE LIVE
+                        if (Number.isSafeInteger(trxId) && trxId > 0) {
+                            const { error: updateTrxErr } = await supabaseClient
+                                .from('transactions')
+                                .update({
+                                    status: 'VOID',
+                                    voided_at: new Date().toISOString(),
+                                    voided_by: this.currentUser.id
+                                })
+                                .eq('id', trxId);
+
+                            if (updateTrxErr) {
+                                console.error('Error updating transaction status to VOID in Supabase:', updateTrxErr);
+                                alert('Gagal meng-update status VOID transaksi di database: ' + (updateTrxErr.message || updateTrxErr) + '. Pembatalan dibatalkan.');
+                                return;
+                            }
+                        }
+
                         const validatedRestores = [];
                         const stockChanges = [];
 
