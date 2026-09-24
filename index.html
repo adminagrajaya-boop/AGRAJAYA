@@ -4362,7 +4362,71 @@
                         if (!persisted) return; // Abort before inserting transaction row if stock update fails
                     }
 
-                    // 7.4 PERSIST POS TRANSACTION TO SUPABASE LIVE (public.transactions)
+                    // 7.4 RESOLVE COA & PAYMENT ACCOUNTS FOR AUTOMATIC JOURNAL POSTING
+                    if (!Array.isArray(this.accountingCOA) || this.accountingCOA.length === 0) {
+                        await this.fetchCOA();
+                    }
+                    if (!Array.isArray(this.accountingPaymentAccounts) || this.accountingPaymentAccounts.length === 0) {
+                        await this.fetchPaymentAccounts();
+                    }
+
+                    const revenueCoa = (this.accountingCOA || []).find(c => c.code === '4-1110');
+                    if (!revenueCoa || !revenueCoa.id) {
+                        alert('Bagan akun Pendapatan Penjualan Barang (4-1110) tidak ditemukan di database. Transaksi dibatalkan.');
+                        return;
+                    }
+                    const revenueCoaId = Number(revenueCoa.id);
+
+                    let posPaymentAccountId = null;
+                    let paymentCoaId = null;
+                    let piutangCoaId = null;
+                    let kasCoaId = null;
+                    let paymentAccObj = null;
+
+                    if (this.paymentMethod === 'Tunai' || this.paymentMethod === 'Transfer' || this.paymentMethod === 'QRIS') {
+                        if (this.paymentMethod === 'Tunai') {
+                            paymentAccObj = (this.accountingPaymentAccounts || []).find(a => a.type === 'CASH' || a.name === 'Kas Tunai Kasir');
+                        } else if (this.paymentMethod === 'Transfer') {
+                            paymentAccObj = (this.accountingPaymentAccounts || []).find(a => a.type === 'BANK' || a.name === 'Bank Operasional');
+                        } else if (this.paymentMethod === 'QRIS') {
+                            paymentAccObj = (this.accountingPaymentAccounts || []).find(a => a.type === 'GATEWAY' || a.name === 'Penampung QRIS');
+                        }
+
+                        if (!paymentAccObj) {
+                            alert('Akun pembayaran kas/bank untuk metode ' + this.paymentMethod + ' tidak terdaftar di sistem. Transaksi dibatalkan.');
+                            return;
+                        }
+
+                        paymentCoaId = Number(paymentAccObj.chart_of_account_id || (paymentAccObj.chart_of_accounts ? paymentAccObj.chart_of_accounts.id : null));
+                        if (!paymentCoaId) {
+                            alert('Akun kas / bank ' + paymentAccObj.name + ' tidak memiliki relasi COA yang valid. Transaksi dibatalkan.');
+                            return;
+                        }
+
+                        posPaymentAccountId = Number(paymentAccObj.id);
+                    } else if (this.paymentMethod === 'Kredit') {
+                        const piutangCoa = (this.accountingCOA || []).find(c => c.code === '1-1110');
+                        if (!piutangCoa || !piutangCoa.id) {
+                            alert('Bagan akun Piutang Usaha (1-1110) tidak ditemukan di database. Transaksi dibatalkan.');
+                            return;
+                        }
+                        piutangCoaId = Number(piutangCoa.id);
+
+                        const dp = Math.min(grandTotal, Math.max(0, Number(this.dpAmount || 0)));
+                        if (dp > 0) {
+                            const kasPayAcc = (this.accountingPaymentAccounts || []).find(a => a.type === 'CASH' || a.name === 'Kas Tunai Kasir');
+                            kasCoaId = kasPayAcc ? Number(kasPayAcc.chart_of_account_id || (kasPayAcc.chart_of_accounts ? kasPayAcc.chart_of_accounts.id : null)) : null;
+                            if (!kasPayAcc || !kasCoaId) {
+                                alert('Akun Kas Tunai (1-1010) untuk penerimaan DP piutang tidak ditemukan. Transaksi dibatalkan.');
+                                return;
+                            }
+                        }
+                    } else {
+                        alert('Metode pembayaran "' + this.paymentMethod + '" tidak dapat dipetakan ke sistem akuntansi. Transaksi dibatalkan.');
+                        return;
+                    }
+
+                    // 7.5 PERSIST POS TRANSACTION & POST AUTOMATIC DOUBLE-ENTRY JOURNAL
                     let insertedTrxId = null;
                     try {
                         const trxPayload = {
@@ -4374,6 +4438,7 @@
                             total: grandTotal,
                             profit: grossProfit,
                             payment_method: this.paymentMethod,
+                            payment_account_id: posPaymentAccountId,
                             items: cartItemsSnapshot,
                             created_by: this.currentUser.id
                         };
@@ -4389,8 +4454,67 @@
                             throw new Error('Supabase tidak mengembalikan ID transaksi yang valid.');
                         }
                         insertedTrxId = insertedTrx.id;
+
+                        // POST AUTOMATIC JOURNAL VIA RPC
+                        let journalLines = [];
+                        if (this.paymentMethod === 'Tunai' || this.paymentMethod === 'Transfer' || this.paymentMethod === 'QRIS') {
+                            journalLines = [
+                                {
+                                    chart_of_account_id: paymentCoaId,
+                                    debit: grandTotal,
+                                    credit: 0,
+                                    description: 'Penerimaan kas/bank POS ' + code + ' via ' + (paymentAccObj ? paymentAccObj.name : this.paymentMethod)
+                                },
+                                {
+                                    chart_of_account_id: revenueCoaId,
+                                    debit: 0,
+                                    credit: grandTotal,
+                                    description: 'Penjualan barang POS ' + code + ' (' + partyNameStr + ')'
+                                }
+                            ];
+                        } else if (this.paymentMethod === 'Kredit') {
+                            const dp = Math.min(grandTotal, Math.max(0, Number(this.dpAmount || 0)));
+                            const remainingPiutang = grandTotal - dp;
+                            if (dp > 0) {
+                                journalLines.push({
+                                    chart_of_account_id: kasCoaId,
+                                    debit: dp,
+                                    credit: 0,
+                                    description: 'Penerimaan DP tunai POS ' + code + ' (' + partyNameStr + ')'
+                                });
+                            }
+                            if (remainingPiutang > 0) {
+                                journalLines.push({
+                                    chart_of_account_id: piutangCoaId,
+                                    debit: remainingPiutang,
+                                    credit: 0,
+                                    description: 'Piutang penjualan POS ' + code + ' (' + partyNameStr + ')'
+                                });
+                            }
+                            journalLines.push({
+                                chart_of_account_id: revenueCoaId,
+                                debit: 0,
+                                credit: grandTotal,
+                                description: 'Penjualan barang POS ' + code + ' (' + partyNameStr + ')'
+                            });
+                        }
+
+                        const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry', {
+                            p_journal_date: dateStr,
+                            p_source_type: 'TRANSACTION',
+                            p_source_id: insertedTrxId,
+                            p_source_code: code,
+                            p_description: 'Jurnal Penjualan POS ' + code + ' - ' + partyNameStr,
+                            p_user_id: this.currentUser.id,
+                            p_lines: journalLines
+                        });
+
+                        if (journalError) {
+                            console.error('Error posting journal for POS transaction:', journalError);
+                            throw new Error('Posting jurnal otomatis transaksi POS ' + code + ' ke General Ledger gagal: ' + (journalError.message || journalError));
+                        }
                     } catch (dbErr) {
-                        console.error('Error persisting transaction to Supabase:', dbErr);
+                        console.error('Error persisting transaction or posting journal to Supabase:', dbErr);
                         // Rollback stock updates if transaction insert failed
                         if (stockChanges.length > 0) {
                             for (let i = stockChanges.length - 1; i >= 0; i--) {
@@ -4401,7 +4525,7 @@
                                     .eq('id', sc.product.id);
                             }
                         }
-                        alert('Gagal menyimpan transaksi ke database Supabase: ' + (dbErr.message || dbErr) + '. Transaksi dibatalkan dan keranjang tidak dihapus.');
+                        alert('Gagal menyimpan transaksi / posting jurnal ke database: ' + (dbErr.message || dbErr) + '. Transaksi dibatalkan dan keranjang tidak dihapus.');
                         return;
                     }
 
