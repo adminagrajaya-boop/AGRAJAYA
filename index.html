@@ -5036,9 +5036,29 @@
 
                     const invNo = this.generateCode('INV', this.invoiceList, 'invCounter');
                     const dateStr = this.getLocalDateString();
+                    const qtIdNum = Number.isSafeInteger(Number(qt.id)) ? Number(qt.id) : null;
+                    const customerIdNum = Number.isSafeInteger(Number(qt.customerId || qt.customer_id)) ? Number(qt.customerId || qt.customer_id) : null;
+                    const projectIdNum = Number.isSafeInteger(Number(qt.projectId || qt.project_id)) ? Number(qt.projectId || qt.project_id) : null;
 
                     // 5. Cek Duplicate Record di Supabase LIVE (public.invoices)
                     try {
+                        if (qtIdNum) {
+                            const { data: existingSupabaseInvByQt, error: chkQtErr } = await supabaseClient
+                                .from('invoices')
+                                .select('id, inv_no')
+                                .eq('quotation_id', qtIdNum)
+                                .maybeSingle();
+
+                            if (chkQtErr) throw chkQtErr;
+                            if (existingSupabaseInvByQt) {
+                                alert(`Penawaran ${qt.qtNo} sudah pernah dikonversi menjadi Invoice: ${existingSupabaseInvByQt.inv_no}`);
+                                qt.status = 'Approved';
+                                this.saveDataToStorage();
+                                this.currentTab = 'invoice';
+                                return;
+                            }
+                        }
+
                         const { data: existingSupabaseInv, error: chkErr } = await supabaseClient
                             .from('invoices')
                             .select('id, inv_no')
@@ -5052,7 +5072,7 @@
                         }
                     } catch (chkErr) {
                         console.error('Cek duplicate invoice error:', chkErr);
-                        alert('Gagal memverifikasi nomor invoice di database: ' + (chkErr.message || chkErr) + '. Konversi dibatalkan.');
+                        alert('Gagal memverifikasi data invoice di database: ' + (chkErr.message || chkErr) + '. Konversi dibatalkan.');
                         return;
                     }
 
@@ -5061,7 +5081,7 @@
                     try {
                         const invoicePayload = {
                             inv_no: invNo,
-                            customer_id: null,
+                            customer_id: customerIdNum,
                             customer_name: qt.customerName || 'Pelanggan',
                             customer_farm: qt.projectName || '-',
                             due_date: '30 Hari',
@@ -5070,8 +5090,8 @@
                             total: computedTotal,
                             paid_amount: 0,
                             remaining: computedTotal,
-                            project_id: null,
-                            quotation_id: Number.isSafeInteger(Number(qt.id)) ? Number(qt.id) : null,
+                            project_id: projectIdNum,
+                            quotation_id: qtIdNum,
                             transaction_id: null,
                             created_by: this.currentUser.id
                         };
@@ -5117,19 +5137,146 @@
                         if (itemsInsertErr) throw itemsInsertErr;
                     } catch (itemsErr) {
                         console.error('Error persisting invoice items to Supabase:', itemsErr);
-                        // Cleanup inserted header on item failure if possible
-                        if (insertedInvId) {
-                            try {
-                                await supabaseClient.from('invoices').delete().eq('id', insertedInvId);
-                            } catch (cleanErr) {
-                                console.error('Invoice header cleanup error:', cleanErr);
-                            }
-                        }
+                        await this.rollbackInvoiceConversion(insertedInvId);
                         alert('Gagal menyimpan rincian item invoice ke database Supabase: ' + (itemsErr.message || itemsErr) + '. Konversi dibatalkan.');
                         return;
                     }
 
-                    // 8. Update Local State (Compatibility with UI & Storage)
+                    // 8. PERSIST RECEIVABLE TO SUPABASE LIVE (public.receivables)
+                    let insertedRecId = null;
+                    try {
+                        const recPayload = {
+                            inv_no: invNo,
+                            customer_name: qt.customerName || 'Pelanggan',
+                            due_date: '30 Hari',
+                            status: 'Belum Bayar',
+                            total: computedTotal,
+                            paid: 0,
+                            remaining: computedTotal,
+                            invoice_id: insertedInvId
+                        };
+
+                        const { data: insertedRec, error: recInsertErr } = await supabaseClient
+                            .from('receivables')
+                            .insert(recPayload)
+                            .select('id')
+                            .single();
+
+                        if (recInsertErr) throw recInsertErr;
+                        if (insertedRec) insertedRecId = insertedRec.id;
+                    } catch (recErr) {
+                        console.error('Error persisting receivable to Supabase:', recErr);
+                        await this.rollbackInvoiceConversion(insertedInvId);
+                        alert('Gagal menyimpan piutang ke database Supabase: ' + (recErr.message || recErr) + '. Konversi dibatalkan.');
+                        return;
+                    }
+
+                    // 9. POST SALES REVENUE JOURNAL TO GENERAL LEDGER VIA RPC post_journal_entry
+                    if (!Array.isArray(this.accountingCOA) || this.accountingCOA.length === 0) {
+                        try {
+                            await this.fetchCOA();
+                        } catch (cErr) {
+                            console.error('Error fetching COA for invoice journal:', cErr);
+                        }
+                    }
+
+                    const piutangCoa = (this.accountingCOA || []).find(c => c.code === '1-1110');
+                    const salesCoa = (this.accountingCOA || []).find(c => c.code === '4-1110');
+                    const serviceCoa = (this.accountingCOA || []).find(c => c.code === '4-1120');
+
+                    if (!piutangCoa || !piutangCoa.id) {
+                        await this.rollbackInvoiceConversion(insertedInvId);
+                        alert('Bagan akun Piutang Usaha (1-1110) tidak ditemukan di database. Konversi invoice dibatalkan.');
+                        return;
+                    }
+
+                    let barangSubtotal = 0;
+                    let jasaSubtotal = 0;
+
+                    for (let item of validatedItems) {
+                        const sub = item.qty * item.price;
+                        if (item.type === 'jasa') {
+                            jasaSubtotal += sub;
+                        } else {
+                            barangSubtotal += sub;
+                        }
+                    }
+
+                    if (barangSubtotal > 0 && (!salesCoa || !salesCoa.id)) {
+                        await this.rollbackInvoiceConversion(insertedInvId);
+                        alert('Bagan akun Pendapatan Penjualan Barang (4-1110) tidak ditemukan di database. Konversi invoice dibatalkan.');
+                        return;
+                    }
+
+                    if (jasaSubtotal > 0 && (!serviceCoa || !serviceCoa.id)) {
+                        await this.rollbackInvoiceConversion(insertedInvId);
+                        alert('Bagan akun Pendapatan Jasa & Instalasi (4-1120) tidak ditemukan di database. Konversi invoice dibatalkan.');
+                        return;
+                    }
+
+                    const journalLines = [
+                        {
+                            chart_of_account_id: Number(piutangCoa.id),
+                            debit: computedTotal,
+                            credit: 0,
+                            description: `Piutang Usaha ${invNo} (${qt.customerName || 'Pelanggan'})`
+                        }
+                    ];
+
+                    if (barangSubtotal > 0) {
+                        journalLines.push({
+                            chart_of_account_id: Number(salesCoa.id),
+                            debit: 0,
+                            credit: barangSubtotal,
+                            description: `Penjualan Barang ${invNo}`
+                        });
+                    }
+
+                    if (jasaSubtotal > 0) {
+                        journalLines.push({
+                            chart_of_account_id: Number(serviceCoa.id),
+                            debit: 0,
+                            credit: jasaSubtotal,
+                            description: `Pendapatan Jasa ${invNo}`
+                        });
+                    }
+
+                    try {
+                        const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry', {
+                            p_journal_date: dateStr,
+                            p_source_type: 'INVOICE',
+                            p_source_id: insertedInvId,
+                            p_source_code: invNo,
+                            p_description: `Jurnal Penjualan Invoice ${invNo} - ${qt.customerName || 'Pelanggan'}`,
+                            p_user_id: this.currentUser.id,
+                            p_lines: journalLines
+                        });
+
+                        if (journalError) throw journalError;
+                    } catch (jErr) {
+                        console.error('Error posting journal entry for invoice:', jErr);
+                        await this.rollbackInvoiceConversion(insertedInvId);
+                        alert('Gagal memposting jurnal penjualan invoice ke akuntansi: ' + (jErr.message || jErr) + '. Konversi dibatalkan.');
+                        return;
+                    }
+
+                    // 10. UPDATE REMOTE QUOTATION STATUS TO APPROVED (POST-JOURNAL COMMIT)
+                    if (qtIdNum) {
+                        try {
+                            const { error: qtUpdErr } = await supabaseClient
+                                .from('quotations')
+                                .update({ status: 'Approved', updated_at: new Date().toISOString() })
+                                .eq('id', qtIdNum);
+
+                            if (qtUpdErr) {
+                                console.error('Gagal memperbarui status penawaran remote setelah jurnal terposting:', qtUpdErr);
+                            }
+                        } catch (qtUpdErr) {
+                            console.error('Error updating remote quotation status:', qtUpdErr);
+                        }
+                    }
+
+                    // 11. Update Local State (Compatibility with UI & Storage)
                     const inv = {
                         id: insertedInvId || Date.now(),
                         supabaseId: insertedInvId,
@@ -5149,11 +5296,10 @@
 
                     this.invoiceList.unshift(inv);
 
-                    // 9. Buat Piutang jika remaining > 0
                     const existingPiutang = this.piutangList.find(p => p.invNo === invNo);
                     if (!existingPiutang && inv.remaining > 0) {
                         this.piutangList.unshift({
-                            id: Date.now(),
+                            id: insertedRecId || Date.now(),
                             invNo: invNo,
                             customerName: inv.customerName,
                             customerFarm: inv.customerFarm,
@@ -5164,12 +5310,30 @@
                         });
                     }
 
-                    // 10. Update status quotation
                     qt.status = 'Approved';
+
+                    if (typeof this.reloadAccountingData === 'function') {
+                        try {
+                            await this.reloadAccountingData();
+                        } catch (e) {}
+                    }
 
                     this.saveDataToStorage();
                     alert(`Penawaran ${qt.qtNo} berhasil dikonversi menjadi Invoice: ${invNo}`);
                     this.currentTab = 'invoice';
+                },
+
+                async rollbackInvoiceConversion(insertedInvId) {
+                    if (!insertedInvId || !supabaseClient) return;
+                    try {
+                        await supabaseClient.from('receivables').delete().eq('invoice_id', insertedInvId);
+                    } catch (e) {}
+                    try {
+                        await supabaseClient.from('invoice_items').delete().eq('invoice_id', insertedInvId);
+                    } catch (e) {}
+                    try {
+                        await supabaseClient.from('invoices').delete().eq('id', insertedInvId);
+                    } catch (e) {}
                 },
 
                 // PURCHASE / PO LOGIC
