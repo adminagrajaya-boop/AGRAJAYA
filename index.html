@@ -5109,7 +5109,11 @@
                         insertedInvId = insertedInv.id;
                     } catch (dbErr) {
                         console.error('Error persisting invoice to Supabase:', dbErr);
-                        alert('Gagal menyimpan invoice ke database Supabase: ' + (dbErr.message || dbErr) + '. Konversi dibatalkan.');
+                        if (dbErr && (dbErr.code === '23505' || (dbErr.message && (dbErr.message.includes('quotation_id') || dbErr.message.includes('unique'))))) {
+                            alert(`Penawaran ${qt.qtNo || ''} sudah dikonversi menjadi Invoice oleh proses lain. Konversi dibatalkan.`);
+                        } else {
+                            alert('Gagal menyimpan invoice ke database Supabase: ' + (dbErr.message || dbErr) + '. Konversi dibatalkan.');
+                        }
                         return;
                     }
 
