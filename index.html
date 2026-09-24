@@ -5177,7 +5177,7 @@
                     this.showPayPiutangModal = true;
                 },
 
-                submitPayPiutang() {
+                async submitPayPiutang() {
                     // 1. Validasi Active Piutang
                     if (!this.activePiutang || !this.activePiutang.invNo) {
                         alert('Data piutang tidak valid.');
@@ -5185,6 +5185,12 @@
                     }
                     if (this.activePiutang.status === 'Dibatalkan') {
                         alert('Invoice ini sudah dibatalkan. Pembayaran tidak dapat diproses.');
+                        return;
+                    }
+
+                    // Auth Session Check
+                    if (!supabaseClient || !this.isAuthenticated || !this.currentUser || !this.currentUser.id) {
+                        alert('Sesi pengguna tidak siap atau belum terautentikasi. Pembayaran piutang dibatalkan.');
                         return;
                     }
 
@@ -5266,25 +5272,110 @@
                     if (newPRemaining < 0.01) newPRemaining = 0;
                     if (newIRemaining < 0.01) newIRemaining = 0;
 
-                    // Apply updates
-                    this.activePiutang.paid = pPaid + payAmt;
-                    this.activePiutang.remaining = newPRemaining;
+                    const newStatus = newIRemaining === 0 ? 'Lunas' : 'Sebagian';
+                    const newPaid = pPaid + payAmt;
+                    const dateStr = this.getLocalDateString();
 
-                    inv.paidAmount = iPaid + payAmt;
-                    inv.remaining = newIRemaining;
+                    // 6. PERSIST PAYMENT HISTORY TO SUPABASE LIVE (public.payment_history)
+                    let insertedPayHistId = null;
+                    try {
+                        const payHistPayload = {
+                            inv_no: inv.invNo,
+                            customer_name: inv.customerName || this.activePiutang.customerName || 'Pelanggan',
+                            payment_date: dateStr,
+                            payment_method: inv.paymentMethod || 'Tunai',
+                            amount: payAmt,
+                            payment_type: 'RECEIVABLE',
+                            invoice_id: Number.isSafeInteger(Number(inv.supabaseId || inv.id)) ? Number(inv.supabaseId || inv.id) : null,
+                            status: 'VALID',
+                            created_by: this.currentUser.id
+                        };
 
-                    if (newIRemaining === 0) {
-                        inv.status = 'Lunas';
-                        this.activePiutang.status = 'Lunas';
-                    } else {
-                        inv.status = 'Sebagian';
-                        this.activePiutang.status = 'Sebagian';
+                        const { data: insertedHist, error: histErr } = await supabaseClient
+                            .from('payment_history')
+                            .insert(payHistPayload)
+                            .select('id')
+                            .single();
+
+                        if (histErr) throw histErr;
+                        if (insertedHist && insertedHist.id) insertedPayHistId = insertedHist.id;
+                    } catch (histErr) {
+                        console.error('Error persisting payment_history to Supabase:', histErr);
+                        alert('Gagal menyimpan catatan riwayat pembayaran ke Supabase: ' + (histErr.message || histErr) + '. Pembayaran dibatalkan.');
+                        return;
                     }
 
-                    // 6. Record Payment History (hanya jika berhasil)
-                    const dateStr = this.getLocalDateString();
+                    // 7. PERSIST RECEIVABLES & INVOICES TO SUPABASE LIVE
+                    try {
+                        // Update public.receivables
+                        const { data: remoteRec } = await supabaseClient
+                            .from('receivables')
+                            .select('id, paid, remaining, status')
+                            .eq('inv_no', inv.invNo)
+                            .maybeSingle();
+
+                        if (remoteRec) {
+                            await supabaseClient
+                                .from('receivables')
+                                .update({
+                                    paid: newPaid,
+                                    remaining: newPRemaining,
+                                    status: newStatus,
+                                    updated_at: new Date().toISOString()
+                                })
+                                .eq('id', remoteRec.id);
+                        } else {
+                            // Insert row if doesn't exist yet
+                            await supabaseClient
+                                .from('receivables')
+                                .insert({
+                                    inv_no: inv.invNo,
+                                    customer_name: inv.customerName || this.activePiutang.customerName || 'Pelanggan',
+                                    due_date: '30 Hari',
+                                    status: newStatus,
+                                    total: pTotal,
+                                    paid: newPaid,
+                                    remaining: newPRemaining,
+                                    invoice_id: Number.isSafeInteger(Number(inv.supabaseId || inv.id)) ? Number(inv.supabaseId || inv.id) : null
+                                });
+                        }
+
+                        // Update public.invoices
+                        await supabaseClient
+                            .from('invoices')
+                            .update({
+                                paid_amount: newPaid,
+                                remaining: newIRemaining,
+                                status: newStatus
+                            })
+                            .eq('inv_no', inv.invNo);
+                    } catch (recErr) {
+                        console.error('Error updating remote receivables/invoices:', recErr);
+                        // Cleanup payment_history row if update failed
+                        if (insertedPayHistId) {
+                            try {
+                                await supabaseClient.from('payment_history').delete().eq('id', insertedPayHistId);
+                            } catch (cErr) {
+                                console.error('Cleanup payment_history error:', cErr);
+                            }
+                        }
+                        alert('Gagal memperbarui status piutang di database Supabase: ' + (recErr.message || recErr) + '. Pembayaran dibatalkan.');
+                        return;
+                    }
+
+                    // Apply updates to local state
+                    this.activePiutang.paid = newPaid;
+                    this.activePiutang.remaining = newPRemaining;
+                    this.activePiutang.status = newStatus;
+
+                    inv.paidAmount = newPaid;
+                    inv.remaining = newIRemaining;
+                    inv.status = newStatus;
+
+                    // Record Payment History locally
                     this.paymentHistory.unshift({
-                        id: Date.now() + Math.random(),
+                        id: insertedPayHistId || (Date.now() + Math.random()),
+                        supabaseId: insertedPayHistId,
                         date: dateStr,
                         invNo: inv.invNo,
                         trxCode: inv.trxCode || inv.invNo,
@@ -5302,12 +5393,19 @@
                     this.showPayHutangModal = true;
                 },
 
-                submitPayHutang() {
+                async submitPayHutang() {
                     // 1. Validasi Data Hutang
                     if (!this.activeHutang || !this.activeHutang.poNo) {
                         alert('Data hutang tidak valid.');
                         return;
                     }
+
+                    // Auth Session Check
+                    if (!supabaseClient || !this.isAuthenticated || !this.currentUser || !this.currentUser.id) {
+                        alert('Sesi pengguna tidak siap atau belum terautentikasi. Pembayaran hutang dibatalkan.');
+                        return;
+                    }
+
                     const hRemaining = Number(this.activeHutang.remaining);
                     if (!Number.isFinite(hRemaining) || hRemaining < 0) {
                         alert('Sisa hutang tidak valid.');
@@ -5379,18 +5477,116 @@
                     }
                     if (newRemaining < 0.01) newRemaining = 0;
 
-                    // 7. Update Kedua Sisi Secara Konsisten & Status Lunas
-                    if (newRemaining === 0) {
-                        this.activeHutang.remaining = 0;
-                        po.remaining = 0;
-                        this.activeHutang.paid = hTotal > 0 ? hTotal : (hPaid + payAmt);
-                        po.paidAmount = poTotal > 0 ? poTotal : (poPaid + payAmt);
-                    } else {
-                        this.activeHutang.remaining = newRemaining;
-                        po.remaining = newRemaining;
-                        this.activeHutang.paid = hPaid + payAmt;
-                        po.paidAmount = poPaid + payAmt;
+                    const newPaid = hTotal > 0 ? (newRemaining === 0 ? hTotal : hPaid + payAmt) : (hPaid + payAmt);
+                    const newStatus = newRemaining === 0 ? 'Lunas' : 'Sebagian';
+                    const dateStr = this.getLocalDateString();
+
+                    // 7. PERSIST PAYMENT HISTORY TO SUPABASE LIVE (public.payment_history)
+                    let insertedPayHistId = null;
+                    try {
+                        const payHistPayload = {
+                            po_no: po.poNo,
+                            supplier_name: po.supplierName || this.activeHutang.supplierName || 'Supplier',
+                            payment_date: dateStr,
+                            payment_method: po.paymentMethod || 'Tunai',
+                            amount: payAmt,
+                            payment_type: 'PAYABLE',
+                            purchase_id: Number.isSafeInteger(Number(po.supabaseId || po.id)) ? Number(po.supabaseId || po.id) : null,
+                            status: 'VALID',
+                            created_by: this.currentUser.id
+                        };
+
+                        const { data: insertedHist, error: histErr } = await supabaseClient
+                            .from('payment_history')
+                            .insert(payHistPayload)
+                            .select('id')
+                            .single();
+
+                        if (histErr) throw histErr;
+                        if (insertedHist && insertedHist.id) insertedPayHistId = insertedHist.id;
+                    } catch (histErr) {
+                        console.error('Error persisting payable payment_history to Supabase:', histErr);
+                        alert('Gagal menyimpan catatan riwayat pembayaran hutang ke Supabase: ' + (histErr.message || histErr) + '. Pembayaran dibatalkan.');
+                        return;
                     }
+
+                    // 8. PERSIST PAYABLES & PURCHASES TO SUPABASE LIVE
+                    try {
+                        // Update public.payables
+                        const { data: remotePay } = await supabaseClient
+                            .from('payables')
+                            .select('id, paid, remaining, status')
+                            .eq('po_no', po.poNo)
+                            .maybeSingle();
+
+                        if (remotePay) {
+                            await supabaseClient
+                                .from('payables')
+                                .update({
+                                    paid: newPaid,
+                                    remaining: newRemaining,
+                                    status: newStatus,
+                                    updated_at: new Date().toISOString()
+                                })
+                                .eq('id', remotePay.id);
+                        } else {
+                            // Insert row if doesn't exist yet
+                            await supabaseClient
+                                .from('payables')
+                                .insert({
+                                    po_no: po.poNo,
+                                    supplier_name: po.supplierName || this.activeHutang.supplierName || 'Supplier',
+                                    due_date: '30 Hari',
+                                    status: newStatus,
+                                    total: hTotal,
+                                    paid: newPaid,
+                                    remaining: newRemaining,
+                                    purchase_id: Number.isSafeInteger(Number(po.supabaseId || po.id)) ? Number(po.supabaseId || po.id) : null
+                                });
+                        }
+
+                        // Update public.purchases
+                        await supabaseClient
+                            .from('purchases')
+                            .update({
+                                paid_amount: newPaid,
+                                remaining: newRemaining
+                            })
+                            .eq('po_no', po.poNo);
+                    } catch (payErr) {
+                        console.error('Error updating remote payables/purchases:', payErr);
+                        // Cleanup payment_history row if update failed
+                        if (insertedPayHistId) {
+                            try {
+                                await supabaseClient.from('payment_history').delete().eq('id', insertedPayHistId);
+                            } catch (cErr) {
+                                console.error('Cleanup payment_history error:', cErr);
+                            }
+                        }
+                        alert('Gagal memperbarui status hutang di database Supabase: ' + (payErr.message || payErr) + '. Pembayaran dibatalkan.');
+                        return;
+                    }
+
+                    // 9. Update Kedua Sisi Secara Konsisten & Status Lunas di Local State
+                    this.activeHutang.remaining = newRemaining;
+                    po.remaining = newRemaining;
+                    this.activeHutang.paid = newPaid;
+                    po.paidAmount = newPaid;
+                    if (newRemaining === 0) {
+                        this.activeHutang.status = 'Lunas';
+                    } else {
+                        this.activeHutang.status = 'Sebagian';
+                    }
+
+                    // Record Payment History locally
+                    this.paymentHistory.unshift({
+                        id: insertedPayHistId || (Date.now() + Math.random()),
+                        supabaseId: insertedPayHistId,
+                        date: dateStr,
+                        poNo: po.poNo,
+                        supplierName: po.supplierName || this.activeHutang.supplierName || 'Supplier',
+                        amount: payAmt
+                    });
 
                     // Atomic Save
                     this.saveDataToStorage();
