@@ -7282,11 +7282,11 @@
 
                         if (journalError) {
                             console.error('Error posting journal for expense:', journalError);
-                            alert('Catatan beban ' + expenseNo + ' berhasil disimpan di data operasional, namun posting jurnal otomatis gagal: ' + (journalError.message || journalError) + '. Silakan periksa koneksi atau hubungi administrator.');
-                        } else {
-                            const jrnNo = (Array.isArray(journalData) && journalData.length > 0) ? journalData[0].journal_no : 'POSTED';
-                            alert('Beban operasional ' + expenseNo + ' sebesar ' + this.formatRupiah(amount) + ' berhasil dicatat dan diposting ke Jurnal Umum (' + jrnNo + ').');
+                            throw new Error('Catatan beban operasional ' + expenseNo + ' tersimpan di database, namun posting jurnal otomatis ke General Ledger gagal: ' + (journalError.message || journalError));
                         }
+
+                        const jrnNo = (Array.isArray(journalData) && journalData.length > 0) ? journalData[0].journal_no : 'POSTED';
+                        alert('Beban operasional ' + expenseNo + ' sebesar ' + this.formatRupiah(amount) + ' berhasil dicatat dan diposting ke Jurnal Umum (' + jrnNo + ').');
 
                         this.showExpenseModal = false;
                         await this.loadAccountingDataFromSupabase();
@@ -7448,11 +7448,11 @@
 
                         if (journalError) {
                             console.error('Error posting journal for equity:', journalError);
-                            alert('Transaksi ekuitas ' + equityNo + ' berhasil disimpan di data operasional, namun posting jurnal otomatis gagal: ' + (journalError.message || journalError) + '. Silakan periksa koneksi atau hubungi administrator.');
-                        } else {
-                            const jrnNo = (Array.isArray(journalData) && journalData.length > 0) ? journalData[0].journal_no : 'POSTED';
-                            alert('Transaksi ekuitas ' + equityNo + ' sebesar ' + this.formatRupiah(amount) + ' berhasil dicatat dan diposting ke Jurnal Umum (' + jrnNo + ').');
+                            throw new Error('Transaksi ekuitas ' + equityNo + ' tersimpan di database, namun posting jurnal otomatis ke General Ledger gagal: ' + (journalError.message || journalError));
                         }
+
+                        const jrnNo = (Array.isArray(journalData) && journalData.length > 0) ? journalData[0].journal_no : 'POSTED';
+                        alert('Transaksi ekuitas ' + equityNo + ' sebesar ' + this.formatRupiah(amount) + ' berhasil dicatat dan diposting ke Jurnal Umum (' + jrnNo + ').');
 
                         this.showEquityModal = false;
                         await this.loadAccountingDataFromSupabase();
