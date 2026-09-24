@@ -1,0 +1,43 @@
+# Environment & Secrets
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.cert
+*credential*
+*secret*
+*service_role*
+
+# Node & Package Managers
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS Temporary Files
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+.DS_Store
+.Spotlight-V100
+.Trashes
+*.tmp
+*.temp
+*~
+~$*
+
+# IDE & Editor Configurations
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.agents/
+
+# Local Scratch & Backup Folders
+backup/
+*.bak
+*.backup
