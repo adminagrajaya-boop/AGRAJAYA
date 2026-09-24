@@ -4881,6 +4881,12 @@
                         return;
                     }
 
+                    // VALIDASI AUTH SESSION UNTUK PERSISTENCE OPERASIONAL
+                    if (!supabaseClient || !this.isAuthenticated || !this.currentUser || !this.currentUser.id) {
+                        alert('Sesi pengguna tidak siap atau belum terautentikasi. Pembelian dibatalkan.');
+                        return;
+                    }
+
                     // VALIDASI SEMUA ITEM SEBELUM MENGUBAH DATA / STOK
                     let computedTotal = 0;
                     const validatedItems = [];
@@ -4943,6 +4949,25 @@
                     const dateStr = this.getLocalDateString();
                     const total = computedTotal;
 
+                    // CEK DUPLICATE RECORD DI SUPABASE LIVE (public.purchases)
+                    try {
+                        const { data: existingPo, error: chkErr } = await supabaseClient
+                            .from('purchases')
+                            .select('id, po_no')
+                            .eq('po_no', poNo)
+                            .maybeSingle();
+
+                        if (chkErr) throw chkErr;
+                        if (existingPo) {
+                            alert('Nomor PO ' + poNo + ' sudah terdaftar di database. Silakan coba kembali.');
+                            return;
+                        }
+                    } catch (chkErr) {
+                        console.error('Cek duplicate purchase error:', chkErr);
+                        alert('Gagal memverifikasi nomor PO di database: ' + (chkErr.message || chkErr) + '. Pembelian dibatalkan.');
+                        return;
+                    }
+
                     const purchaseItems = validatedItems.map(vi => ({
                         productId: vi.product.id,
                         name: vi.product.name,
@@ -4950,7 +4975,7 @@
                         costPrice: vi.costPrice
                     }));
 
-                    // Persist stock/cost changes to Supabase before mutating local state.
+                    // Persist stock/cost changes to Supabase before inserting purchase header.
                     const purchaseStockChanges = validatedItems.map(vi => ({
                         product: vi.product,
                         oldStock: Number(vi.product.stock),
@@ -4968,6 +4993,91 @@
                     );
                     if (!persistedPurchaseStock) return;
 
+                    const remaining = this.newPo.paymentMethod === 'Kredit' ? total : 0;
+                    const paid = total - remaining;
+
+                    // PERSIST PURCHASE HEADER TO SUPABASE LIVE (public.purchases)
+                    let insertedPurchaseId = null;
+                    try {
+                        const purchasePayload = {
+                            po_no: poNo,
+                            supplier_id: null,
+                            supplier_name: this.newPo.supplierName,
+                            purchase_date: dateStr,
+                            total: total,
+                            paid_amount: paid,
+                            remaining: remaining,
+                            payment_method: this.newPo.paymentMethod,
+                            payment_account_id: null,
+                            created_by: this.currentUser.id
+                        };
+
+                        const { data: insertedPo, error: insertPoErr } = await supabaseClient
+                            .from('purchases')
+                            .insert(purchasePayload)
+                            .select('id, po_no')
+                            .single();
+
+                        if (insertPoErr) throw insertPoErr;
+                        if (!insertedPo || !insertedPo.id) {
+                            throw new Error('Supabase tidak mengembalikan ID pembelian yang valid.');
+                        }
+                        insertedPurchaseId = insertedPo.id;
+                    } catch (dbErr) {
+                        console.error('Error persisting purchase to Supabase:', dbErr);
+                        // Rollback stock and cost price if purchase header insert failed
+                        if (purchaseStockChanges.length > 0) {
+                            for (let i = purchaseStockChanges.length - 1; i >= 0; i--) {
+                                const sc = purchaseStockChanges[i];
+                                await supabaseClient
+                                    .from('products')
+                                    .update({ stock: sc.oldStock, cost_price: sc.oldCostPrice })
+                                    .eq('id', sc.product.id);
+                            }
+                        }
+                        alert('Gagal menyimpan data pembelian ke database Supabase: ' + (dbErr.message || dbErr) + '. Pembelian dibatalkan.');
+                        return;
+                    }
+
+                    // PERSIST PURCHASE ITEMS TO SUPABASE LIVE (public.purchase_items)
+                    try {
+                        const poItemsPayload = validatedItems.map(vi => ({
+                            purchase_id: insertedPurchaseId,
+                            product_id: Number.isSafeInteger(Number(vi.product.id)) ? Number(vi.product.id) : null,
+                            cost_price: vi.costPrice,
+                            qty: vi.qty,
+                            subtotal: vi.qty * vi.costPrice
+                        }));
+
+                        const { error: itemsInsertErr } = await supabaseClient
+                            .from('purchase_items')
+                            .insert(poItemsPayload);
+
+                        if (itemsInsertErr) throw itemsInsertErr;
+                    } catch (itemsErr) {
+                        console.error('Error persisting purchase items to Supabase:', itemsErr);
+                        // Cleanup header and rollback stock if items insert failed
+                        if (insertedPurchaseId) {
+                            try {
+                                await supabaseClient.from('purchases').delete().eq('id', insertedPurchaseId);
+                            } catch (cleanErr) {
+                                console.error('Purchase header cleanup error:', cleanErr);
+                            }
+                        }
+                        if (purchaseStockChanges.length > 0) {
+                            for (let i = purchaseStockChanges.length - 1; i >= 0; i--) {
+                                const sc = purchaseStockChanges[i];
+                                await supabaseClient
+                                    .from('products')
+                                    .update({ stock: sc.oldStock, cost_price: sc.oldCostPrice })
+                                    .eq('id', sc.product.id);
+                            }
+                        }
+                        alert('Gagal menyimpan rincian item pembelian ke database Supabase: ' + (itemsErr.message || itemsErr) + '. Pembelian dibatalkan.');
+                        return;
+                    }
+
+                    // UPDATE LOCAL STATE ONLY AFTER SUPABASE PERSISTENCE SUCCEEDS
                     purchaseStockChanges.forEach(change => {
                         change.product.stock = change.newStock;
                         change.product.costPrice = change.newCostPrice;
@@ -4981,11 +5091,9 @@
                         });
                     });
 
-                    const remaining = this.newPo.paymentMethod === 'Kredit' ? total : 0;
-                    const paid = total - remaining;
-
                     this.pembelianList.unshift({
-                        id: Date.now(),
+                        id: insertedPurchaseId || Date.now(),
+                        supabaseId: insertedPurchaseId,
                         poNo: poNo,
                         date: dateStr,
                         supplierName: this.newPo.supplierName,
@@ -5009,7 +5117,7 @@
                     }
 
                     this.transactionHistory.unshift({
-                        id: Date.now(),
+                        id: insertedPurchaseId || Date.now(),
                         code: poNo,
                         date: dateStr,
                         type: 'Beli',
