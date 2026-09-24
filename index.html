@@ -4591,7 +4591,7 @@
                     this.showAddQuotationModal = false;
                 },
 
-                convertQuotationToInvoice(qt) {
+                async convertQuotationToInvoice(qt) {
                     if (!qt) return;
 
                     // 1. Status Guard
@@ -4600,7 +4600,13 @@
                         return;
                     }
 
-                    // 2. Prevent Duplicate Invoice Guard
+                    // 2. Auth Session Guard
+                    if (!supabaseClient || !this.isAuthenticated || !this.currentUser || !this.currentUser.id) {
+                        alert('Sesi pengguna tidak siap atau belum terautentikasi. Konversi invoice dibatalkan.');
+                        return;
+                    }
+
+                    // 3. Prevent Duplicate Invoice Guard (Local Check)
                     const existingInv = this.invoiceList.find(inv => inv.quotationId === qt.id || inv.quotationNo === qt.qtNo);
                     if (existingInv) {
                         alert(`Penawaran ${qt.qtNo} sudah pernah dikonversi menjadi Invoice: ${existingInv.invNo}`);
@@ -4610,7 +4616,7 @@
                         return;
                     }
 
-                    // 3. Validasi Data Quotation & Items Sebelum Mutasi
+                    // 4. Validasi Data Quotation & Items Sebelum Mutasi
                     if (!Array.isArray(qt.items) || qt.items.length === 0) {
                         alert(`Penawaran ${qt.qtNo || ''} tidak dapat dikonversi karena daftar item tidak valid atau kosong.`);
                         return;
@@ -4682,12 +4688,105 @@
                         }
                     }
 
-                    // 4. Proses Buat Invoice & Mutasi Data (Hanya setelah semua validasi berhasil)
                     const invNo = this.generateCode('INV', this.invoiceList, 'invCounter');
                     const dateStr = this.getLocalDateString();
 
+                    // 5. Cek Duplicate Record di Supabase LIVE (public.invoices)
+                    try {
+                        const { data: existingSupabaseInv, error: chkErr } = await supabaseClient
+                            .from('invoices')
+                            .select('id, inv_no')
+                            .eq('inv_no', invNo)
+                            .maybeSingle();
+
+                        if (chkErr) throw chkErr;
+                        if (existingSupabaseInv) {
+                            alert('Nomor invoice ' + invNo + ' sudah terdaftar di database. Silakan coba kembali.');
+                            return;
+                        }
+                    } catch (chkErr) {
+                        console.error('Cek duplicate invoice error:', chkErr);
+                        alert('Gagal memverifikasi nomor invoice di database: ' + (chkErr.message || chkErr) + '. Konversi dibatalkan.');
+                        return;
+                    }
+
+                    // 6. PERSIST INVOICE TO SUPABASE LIVE (public.invoices)
+                    let insertedInvId = null;
+                    try {
+                        const invoicePayload = {
+                            inv_no: invNo,
+                            customer_id: null,
+                            customer_name: qt.customerName || 'Pelanggan',
+                            customer_farm: qt.projectName || '-',
+                            due_date: '30 Hari',
+                            invoice_date: dateStr,
+                            status: 'Belum Bayar',
+                            total: computedTotal,
+                            paid_amount: 0,
+                            remaining: computedTotal,
+                            project_id: null,
+                            quotation_id: Number.isSafeInteger(Number(qt.id)) ? Number(qt.id) : null,
+                            transaction_id: null,
+                            created_by: this.currentUser.id
+                        };
+
+                        const { data: insertedInv, error: insertInvErr } = await supabaseClient
+                            .from('invoices')
+                            .insert(invoicePayload)
+                            .select('id, inv_no')
+                            .single();
+
+                        if (insertInvErr) throw insertInvErr;
+                        if (!insertedInv || !insertedInv.id) {
+                            throw new Error('Supabase tidak mengembalikan ID invoice yang valid.');
+                        }
+                        insertedInvId = insertedInv.id;
+                    } catch (dbErr) {
+                        console.error('Error persisting invoice to Supabase:', dbErr);
+                        alert('Gagal menyimpan invoice ke database Supabase: ' + (dbErr.message || dbErr) + '. Konversi dibatalkan.');
+                        return;
+                    }
+
+                    // 7. PERSIST INVOICE ITEMS TO SUPABASE LIVE (public.invoice_items)
+                    try {
+                        const itemsPayload = validatedItems.map(item => {
+                            const prod = this.products.find(p => p.id == item.productId);
+                            const costPrice = prod && Number.isFinite(Number(prod.costPrice)) ? Number(prod.costPrice) : 0;
+                            return {
+                                invoice_id: insertedInvId,
+                                product_id: Number.isSafeInteger(Number(item.productId)) ? Number(item.productId) : null,
+                                category: item.category || 'General',
+                                unit: item.unit || 'Unit',
+                                price: item.price,
+                                cost_price: costPrice,
+                                qty: item.qty,
+                                subtotal: item.qty * item.price
+                            };
+                        });
+
+                        const { error: itemsInsertErr } = await supabaseClient
+                            .from('invoice_items')
+                            .insert(itemsPayload);
+
+                        if (itemsInsertErr) throw itemsInsertErr;
+                    } catch (itemsErr) {
+                        console.error('Error persisting invoice items to Supabase:', itemsErr);
+                        // Cleanup inserted header on item failure if possible
+                        if (insertedInvId) {
+                            try {
+                                await supabaseClient.from('invoices').delete().eq('id', insertedInvId);
+                            } catch (cleanErr) {
+                                console.error('Invoice header cleanup error:', cleanErr);
+                            }
+                        }
+                        alert('Gagal menyimpan rincian item invoice ke database Supabase: ' + (itemsErr.message || itemsErr) + '. Konversi dibatalkan.');
+                        return;
+                    }
+
+                    // 8. Update Local State (Compatibility with UI & Storage)
                     const inv = {
-                        id: Date.now(),
+                        id: insertedInvId || Date.now(),
+                        supabaseId: insertedInvId,
                         invNo: invNo,
                         quotationId: qt.id,
                         quotationNo: qt.qtNo,
@@ -4704,7 +4803,7 @@
 
                     this.invoiceList.unshift(inv);
 
-                    // 5. Buat Piutang jika remaining > 0
+                    // 9. Buat Piutang jika remaining > 0
                     const existingPiutang = this.piutangList.find(p => p.invNo === invNo);
                     if (!existingPiutang && inv.remaining > 0) {
                         this.piutangList.unshift({
@@ -4719,7 +4818,7 @@
                         });
                     }
 
-                    // 6. Update status quotation
+                    // 10. Update status quotation
                     qt.status = 'Approved';
 
                     this.saveDataToStorage();
