@@ -2029,7 +2029,7 @@
                                                     <th class="p-3 text-center">Rincian Baris</th>
                                                 </tr>
                                             </thead>
-                                            <tbody class="divide-y divide-slate-100 font-medium">
+                                            <tbody class="divide-y divide-slate-100 font-medium" x-show="accountingJournals.length === 0">
                                                 <template x-if="accountingJournals.length === 0 && !accountingLoading && !accountingError">
                                                     <tr>
                                                         <td colspan="8" class="p-8 text-center text-slate-400 italic">
@@ -2042,7 +2042,9 @@
                                                             <i class="fa-solid fa-circle-exclamation mr-1"></i> Gagal memuat jurnal umum. Silakan klik tombol Coba Lagi di atas.</td>
                                                     </tr>
                                                 </template>
-                                                <template x-for="jrn in accountingJournals" :key="jrn.id">
+                                            </tbody>
+                                            <template x-for="jrn in accountingJournals" :key="jrn.id">
+                                                <tbody class="divide-y divide-slate-100 font-medium border-b border-slate-200/60">
                                                     <tr class="hover:bg-slate-50/80 transition-colors">
                                                         <td class="p-3 font-mono font-bold text-slate-800"
                                                             x-text="jrn.journal_no"></td>
@@ -2076,8 +2078,7 @@
                                                     </tr>
 
                                                     <!-- Accordion Line Details -->
-                                                    <template x-if="expandedJournalId === jrn.id">
-                                                        <tr class="bg-slate-50/90 border-y border-slate-200">
+                                                    <tr x-show="expandedJournalId === jrn.id" x-cloak class="bg-slate-50/90 border-y border-slate-200">
                                                             <td colspan="8" class="p-3 pl-8">
                                                                 <div
                                                                     class="bg-white rounded-xl border border-slate-200 p-3 space-y-2">
@@ -2125,9 +2126,8 @@
                                                                 </div>
                                                             </td>
                                                         </tr>
-                                                    </template>
-                                                </template>
-                                            </tbody>
+                                                </tbody>
+                                            </template>
                                         </table>
                                     </div>
                                 </div>
@@ -4522,7 +4522,7 @@
                     try {
                         const trxPayload = {
                             trx_code: code,
-                            transaction_type: 'Penjualan',
+                            transaction_type: 'Jual',
                             party_name: partyNameStr,
                             transaction_date: dateStr,
                             status: 'VALID',
@@ -5314,8 +5314,7 @@
                             purchase_id: insertedPurchaseId,
                             product_id: Number.isSafeInteger(Number(vi.product.id)) ? Number(vi.product.id) : null,
                             cost_price: vi.costPrice,
-                            qty: vi.qty,
-                            subtotal: vi.qty * vi.costPrice
+                            qty: vi.qty
                         }));
 
                         const { error: itemsInsertErr } = await supabaseClient
@@ -5637,6 +5636,26 @@
                     let insertedPayHistId = null;
                     let remoteRecId = null;
                     try {
+                        // AMBIL INVOICE ID ASLI DARI SUPABASE JIKA TERDAFTAR DI PUBLIC.INVOICES (NULL UNTUK POS CREDIT)
+                        let targetInvoiceId = null;
+                        const { data: remoteInv, error: remoteInvErr } = await supabaseClient
+                            .from('invoices')
+                            .select('id, inv_no')
+                            .eq('inv_no', inv.invNo)
+                            .maybeSingle();
+
+                        if (remoteInvErr) {
+                            throw new Error('Gagal memverifikasi data invoice di database: ' + remoteInvErr.message);
+                        }
+
+                        if (remoteInv) {
+                            const invIdNum = Number(remoteInv.id);
+                            if (!Number.isSafeInteger(invIdNum) || invIdNum <= 0) {
+                                throw new Error('ID invoice dari database tidak valid untuk nomor: ' + inv.invNo);
+                            }
+                            targetInvoiceId = invIdNum;
+                        }
+
                         const payHistPayload = {
                             inv_no: inv.invNo,
                             customer_name: inv.customerName || this.activePiutang.customerName || 'Pelanggan',
@@ -5644,8 +5663,8 @@
                             payment_method: payMethod,
                             payment_account_id: payAccountId,
                             amount: payAmt,
-                            payment_type: 'RECEIVABLE',
-                            invoice_id: Number.isSafeInteger(Number(inv.supabaseId || inv.id)) ? Number(inv.supabaseId || inv.id) : null,
+                            payment_type: 'piutang',
+                            invoice_id: targetInvoiceId,
                             status: 'VALID',
                             created_by: this.currentUser.id
                         };
@@ -5689,7 +5708,7 @@
                                     total: pTotal,
                                     paid: newPaid,
                                     remaining: newPRemaining,
-                                    invoice_id: Number.isSafeInteger(Number(inv.supabaseId || inv.id)) ? Number(inv.supabaseId || inv.id) : null
+                                    invoice_id: targetInvoiceId
                                 });
                         }
 
@@ -5912,6 +5931,26 @@
                     let insertedPayHistId = null;
                     let remotePayId = null;
                     try {
+                        // AMBIL PURCHASE ID ASLI DARI SUPABASE JIKA TERDAFTAR DI PUBLIC.PURCHASES (NULL JIKA TIDAK ADA)
+                        let targetPurchaseId = null;
+                        const { data: remotePo, error: remotePoErr } = await supabaseClient
+                            .from('purchases')
+                            .select('id, po_no')
+                            .eq('po_no', po.poNo)
+                            .maybeSingle();
+
+                        if (remotePoErr) {
+                            throw new Error('Gagal memverifikasi data pembelian di database: ' + remotePoErr.message);
+                        }
+
+                        if (remotePo) {
+                            const poIdNum = Number(remotePo.id);
+                            if (!Number.isSafeInteger(poIdNum) || poIdNum <= 0) {
+                                throw new Error('ID pembelian dari database tidak valid untuk nomor PO: ' + po.poNo);
+                            }
+                            targetPurchaseId = poIdNum;
+                        }
+
                         const payHistPayload = {
                             po_no: po.poNo,
                             supplier_name: po.supplierName || this.activeHutang.supplierName || 'Supplier',
@@ -5919,8 +5958,8 @@
                             payment_method: payMethod,
                             payment_account_id: payAccountId,
                             amount: payAmt,
-                            payment_type: 'PAYABLE',
-                            purchase_id: Number.isSafeInteger(Number(po.supabaseId || po.id)) ? Number(po.supabaseId || po.id) : null,
+                            payment_type: 'hutang',
+                            purchase_id: targetPurchaseId,
                             status: 'VALID',
                             created_by: this.currentUser.id
                         };
@@ -5964,7 +6003,7 @@
                                     total: hTotal,
                                     paid: newPaid,
                                     remaining: newRemaining,
-                                    purchase_id: Number.isSafeInteger(Number(po.supabaseId || po.id)) ? Number(po.supabaseId || po.id) : null
+                                    purchase_id: targetPurchaseId
                                 });
                         }
 
@@ -6090,10 +6129,20 @@
 
                     this.isVoiding = true;
                     try {
-                        // 1. CARI ORIGINAL JOURNAL UNTUK REVERSAL
-                        const trxId = Number(trx.supabaseId || trx.id);
-                        let origJournalId = null;
+                        // 1. CARI ORIGINAL TRANSACTION & JOURNAL UNTUK REVERSAL
+                        let trxId = Number(trx.supabaseId);
+                        if (!Number.isSafeInteger(trxId) || trxId <= 0) {
+                            const { data: remoteTrx } = await supabaseClient
+                                .from('transactions')
+                                .select('id')
+                                .eq('trx_code', trx.code)
+                                .maybeSingle();
+                            if (remoteTrx && remoteTrx.id) {
+                                trxId = Number(remoteTrx.id);
+                            }
+                        }
 
+                        let origJournalId = null;
                         if (Number.isSafeInteger(trxId) && trxId > 0) {
                             const { data: origJournal, error: lookupErr } = await supabaseClient
                                 .from('journal_entries')
