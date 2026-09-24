@@ -4515,7 +4515,26 @@
                         }
                     } catch (dbErr) {
                         console.error('Error persisting transaction or posting journal to Supabase:', dbErr);
-                        // Rollback stock updates if transaction insert failed
+                        // Clean up operational transaction orphan if insert succeeded but journal posting failed
+                        if (insertedTrxId) {
+                            try {
+                                const { error: delErr } = await supabaseClient
+                                    .from('transactions')
+                                    .delete()
+                                    .eq('id', insertedTrxId);
+                                if (delErr) {
+                                    console.warn('Could not delete orphaned transaction row, updating status to VOID:', delErr);
+                                    await supabaseClient
+                                        .from('transactions')
+                                        .update({ status: 'VOID' })
+                                        .eq('id', insertedTrxId);
+                                }
+                            } catch (cleanupErr) {
+                                console.error('Error cleaning up orphaned transaction:', cleanupErr);
+                            }
+                        }
+
+                        // Rollback stock updates if transaction or journal insert failed
                         if (stockChanges.length > 0) {
                             for (let i = stockChanges.length - 1; i >= 0; i--) {
                                 const sc = stockChanges[i];
