@@ -3660,6 +3660,9 @@
                             'payment_history',
                             'products',
                             'stock_logs',
+                            'projects',
+                            'quotations',
+                            'quotation_items',
                             'journal_entries',
                             'journal_lines',
                             'expenses',
@@ -3702,7 +3705,7 @@
                         this.realtimeDebounceTimer = null;
                         try {
                             const accountingTables = ['journal_entries', 'journal_lines', 'expenses', 'equity_transactions', 'payment_accounts', 'chart_of_accounts'];
-                            const masterTables = ['products', 'stock_logs', 'transactions', 'invoices', 'receivables', 'purchases', 'payables', 'payment_history'];
+                            const masterTables = ['products', 'stock_logs', 'transactions', 'invoices', 'receivables', 'purchases', 'payables', 'payment_history', 'projects', 'quotations', 'quotation_items'];
 
                             if (accountingTables.includes(tableName)) {
                                 await this.loadAccountingDataFromSupabase();
@@ -3830,6 +3833,54 @@
                             }
                         } else {
                             this.projects = remoteProjects.map(this.mapSupabaseProject);
+                        }
+
+                        // QUOTATIONS & QUOTATION ITEMS FROM SUPABASE LIVE
+                        const { data: remoteQuotations, error: qtFetchErr } = await supabaseClient
+                            .from('quotations')
+                            .select('id, qt_no, customer_id, customer_name, project_id, valid_until, status, total, created_at')
+                            .order('id', { ascending: false });
+
+                        if (!qtFetchErr && Array.isArray(remoteQuotations)) {
+                            const { data: remoteQtItems } = await supabaseClient
+                                .from('quotation_items')
+                                .select('id, quotation_id, product_id, category, unit, price, qty, subtotal')
+                                .order('id', { ascending: true });
+
+                            const itemsByQtId = {};
+                            if (Array.isArray(remoteQtItems)) {
+                                remoteQtItems.forEach(item => {
+                                    const qid = Number(item.quotation_id);
+                                    if (!itemsByQtId[qid]) itemsByQtId[qid] = [];
+                                    const prod = (this.products || []).find(p => Number(p.id) === Number(item.product_id));
+                                    itemsByQtId[qid].push({
+                                        id: Number(item.id),
+                                        productId: Number(item.product_id),
+                                        name: prod ? prod.name : 'Item Penawaran',
+                                        category: item.category || 'General',
+                                        unit: item.unit || 'Unit',
+                                        price: Number(item.price),
+                                        qty: Number(item.qty),
+                                        subtotal: Number(item.subtotal)
+                                    });
+                                });
+                            }
+
+                            this.penawaranList = remoteQuotations.map(row => {
+                                const qid = Number(row.id);
+                                return {
+                                    id: qid,
+                                    supabaseId: qid,
+                                    qtNo: row.qt_no,
+                                    customerName: row.customer_name,
+                                    projectId: Number(row.project_id) || null,
+                                    validUntil: row.valid_until || '14 Hari',
+                                    date: this.normalizeSupabaseDate(row.created_at),
+                                    status: row.status || 'Draft',
+                                    total: Number(row.total),
+                                    items: itemsByQtId[qid] || []
+                                };
+                            });
                         }
 
                         // Keep a local backup/cache, but no longer treat it as the source of truth.
@@ -4758,7 +4809,7 @@
                     return Number.isFinite(total) && total >= 0 ? total : 0;
                 },
 
-                saveQuotation() {
+                async saveQuotation() {
                     const customerName = (this.newQt.customerName || '').trim();
                     if (!customerName) {
                         alert('Nama pelanggan wajib diisi.');
@@ -4767,6 +4818,11 @@
 
                     if (!Array.isArray(this.newQt.items) || this.newQt.items.length === 0) {
                         alert('Minimal tambahkan 1 barang atau jasa ke penawaran.');
+                        return;
+                    }
+
+                    if (!supabaseClient || !this.isAuthenticated || !this.currentUser || !this.currentUser.id) {
+                        alert('Sesi pengguna tidak siap atau belum terautentikasi. Penawaran dibatalkan.');
                         return;
                     }
 
@@ -4798,8 +4854,11 @@
                         validatedItems.push({
                             productId: prod.id,
                             name: prod.name,
+                            category: prod.category || 'General',
+                            unit: prod.unit || 'Unit',
                             qty: qty,
-                            price: price
+                            price: price,
+                            subtotal: itemSubtotal
                         });
                     }
 
@@ -4809,10 +4868,63 @@
                     }
 
                     const qtNo = this.generateCode('QT', this.penawaranList, 'qtCounter');
+                    const dateStr = this.getLocalDateString();
+
+                    let insertedQtId = null;
+                    try {
+                        const qtPayload = {
+                            qt_no: qtNo,
+                            customer_id: null,
+                            customer_name: customerName,
+                            project_id: Number.isSafeInteger(Number(this.newQt.projectId)) ? Number(this.newQt.projectId) : null,
+                            valid_until: this.newQt.validUntil || '14 Hari',
+                            status: 'Draft',
+                            total: computedTotal,
+                            created_by: this.currentUser.id
+                        };
+
+                        const { data: insertedQt, error: qtErr } = await supabaseClient
+                            .from('quotations')
+                            .insert(qtPayload)
+                            .select('id, qt_no')
+                            .single();
+
+                        if (qtErr) throw qtErr;
+                        if (!insertedQt || !insertedQt.id) throw new Error('Supabase tidak mengembalikan ID penawaran.');
+                        insertedQtId = insertedQt.id;
+
+                        const itemsPayload = validatedItems.map(vi => ({
+                            quotation_id: insertedQtId,
+                            product_id: Number.isSafeInteger(Number(vi.productId)) ? Number(vi.productId) : null,
+                            category: vi.category,
+                            unit: vi.unit,
+                            price: vi.price,
+                            qty: vi.qty,
+                            subtotal: vi.subtotal
+                        }));
+
+                        const { error: itemsErr } = await supabaseClient
+                            .from('quotation_items')
+                            .insert(itemsPayload);
+
+                        if (itemsErr) throw itemsErr;
+                    } catch (err) {
+                        console.error('Save quotation error:', err);
+                        if (insertedQtId) {
+                            try {
+                                await supabaseClient.from('quotation_items').delete().eq('quotation_id', insertedQtId);
+                                await supabaseClient.from('quotations').delete().eq('id', insertedQtId);
+                            } catch (cErr) { console.error('Cleanup quotation error:', cErr); }
+                        }
+                        alert('Gagal menyimpan penawaran ke database: ' + (err.message || err) + '. Penawaran dibatalkan.');
+                        return;
+                    }
+
                     this.penawaranList.unshift({
-                        id: Date.now(),
+                        id: insertedQtId,
+                        supabaseId: insertedQtId,
                         qtNo: qtNo,
-                        date: this.newQt.date || this.getLocalDateString(),
+                        date: dateStr,
                         validUntil: this.newQt.validUntil || '14 Hari',
                         customerName: customerName,
                         projectName: this.newQt.projectName || 'Proyek Closed House',
