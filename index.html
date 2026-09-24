@@ -2294,8 +2294,8 @@
                                                         x-text="formatRupiah(getAccountBalanceByCode('1-1210', 'DEBIT'))"></span>
                                                 </div>
                                                 <div
-                                                    class="flex justify-between font-bold text-slate-800 pt-1 border-t border-slate-100">
-                                                    <span>TOTAL ASET</span>
+                                                    class="pt-3 border-t-2 border-slate-800 flex justify-between font-black text-sm">
+                                                    <span class="text-slate-900 uppercase tracking-wider">TOTAL ASET</span>
                                                     <span class="font-mono text-brand-600"
                                                         x-text="formatRupiah(accountingDashboardStats.saldoKas + accountingDashboardStats.saldoBank + accountingDashboardStats.saldoQris + accountingDashboardStats.saldoPiutang + getAccountBalanceByCode('1-1210', 'DEBIT'))"></span>
                                                 </div>
@@ -2353,6 +2353,13 @@
                                                         x-text="formatRupiah(getAccountBalanceByCode('3-1110', 'CREDIT') - getAccountBalanceByCode('3-1120', 'DEBIT') + accountingDashboardStats.labaRugi)"></span>
                                                 </div>
                                             </div>
+                                        </div>
+
+                                        <div
+                                            class="pt-3 border-t-2 border-slate-800 flex justify-between font-black text-sm">
+                                            <span class="text-slate-900 uppercase tracking-wider">TOTAL KEWAJIBAN & EKUITAS</span>
+                                            <span class="font-mono text-brand-600"
+                                                x-text="formatRupiah((accountingDashboardStats.saldoHutang + getAccountBalanceByCode('2-1120', 'CREDIT')) + (getAccountBalanceByCode('3-1110', 'CREDIT') - getAccountBalanceByCode('3-1120', 'DEBIT') + accountingDashboardStats.labaRugi))"></span>
                                         </div>
                                     </div>
 
