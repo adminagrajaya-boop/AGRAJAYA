@@ -6991,7 +6991,8 @@
                                     cost_price: costPrice,
                                     stock,
                                     unit: type === 'jasa' ? 'Layanan' : 'Unit',
-                                    type
+                                    type,
+                                    created_by: this.currentUser?.id || null
                                 })
                                 .select('id, name, category, price, cost_price, stock, unit, type')
                                 .single();
@@ -7013,7 +7014,7 @@
                                         stock_after: stock,
                                         reference_code: null,
                                         note: 'Stok awal produk baru',
-                                        created_by: this.currentUser.id
+                                        created_by: this.currentUser?.id || null
                                     });
                                 if (logError) console.error('Stock log insert error:', logError);
                             }
@@ -7023,7 +7024,8 @@
                         this.showAddProductModal = false;
                     } catch (error) {
                         console.error('Save product error:', error);
-                        alert('Gagal menyimpan produk ke database. Data aplikasi tidak diubah.');
+                        const detailMsg = error?.message || error?.details || 'Terjadi kesalahan koneksi atau otorisasi database.';
+                        alert(`Gagal menyimpan produk ke database: ${detailMsg}`);
                     }
                 },
 
