@@ -3651,37 +3651,54 @@
 
                         const usernameTrim = this.loginUsername.trim();
 
-                        // 1. Resolve the active Auth email from the username via a secure RPC or identity mapping.
-                        let authEmail = null;
-                        if (usernameTrim.toLowerCase() === 'admin.agrajaya' || usernameTrim.toLowerCase() === 'arvendy.00581602') {
-                            authEmail = 'arvendy.00581602@gmail.com';
+                        // 1. Resolve potential candidate emails for Supabase Auth
+                        let candidateEmails = [];
+                        if (usernameTrim.includes('@')) {
+                            candidateEmails = [usernameTrim];
+                        } else if (usernameTrim.toLowerCase() === 'arvendy.00581602' || usernameTrim.toLowerCase() === 'owner') {
+                            candidateEmails = ['arvendy.00581602@gmail.com', 'admin.agrajaya@gmail.com'];
+                        } else if (usernameTrim.toLowerCase() === 'admin.agrajaya') {
+                            candidateEmails = ['admin.agrajaya@gmail.com', 'arvendy.00581602@gmail.com'];
                         } else if (usernameTrim.toLowerCase() === 'kasir.agrajaya' || usernameTrim.toLowerCase() === 'kasir') {
-                            authEmail = 'admin.agrajaya@gmail.com';
+                            candidateEmails = ['admin.agrajaya@gmail.com'];
                         } else {
                             const { data: rpcEmail, error: emailErr } = await supabaseClient
                                 .rpc('get_auth_email_by_username', { p_username: usernameTrim });
 
                             if (!emailErr && rpcEmail && typeof rpcEmail === 'string') {
-                                authEmail = rpcEmail;
-                            } else if (usernameTrim.includes('@')) {
-                                authEmail = usernameTrim;
+                                candidateEmails = [rpcEmail];
+                            } else {
+                                candidateEmails = ['admin.agrajaya@gmail.com', 'arvendy.00581602@gmail.com'];
                             }
                         }
 
-                        if (!authEmail) {
+                        if (candidateEmails.length === 0) {
                             this.loginError = 'Username atau password tidak valid.';
                             this.loginLoading = false;
                             return;
                         }
 
-                        // 2. Sign in using the real email stored in Supabase Auth.
-                        const { data: authData, error: authErr } = await supabaseClient.auth.signInWithPassword({
-                            email: authEmail,
-                            password: this.loginPassword
-                        });
+                        // 2. Sign in attempting candidate emails
+                        let authData = null;
+                        let lastAuthErr = null;
 
-                        if (authErr || !authData?.session) {
-                            console.error('Supabase Auth login error:', authErr);
+                        for (const emailCandidate of candidateEmails) {
+                            const { data, error } = await supabaseClient.auth.signInWithPassword({
+                                email: emailCandidate,
+                                password: this.loginPassword
+                            });
+
+                            if (!error && data?.session) {
+                                authData = data;
+                                lastAuthErr = null;
+                                break;
+                            } else {
+                                lastAuthErr = error;
+                            }
+                        }
+
+                        if (!authData?.session) {
+                            console.error('Supabase Auth login error:', lastAuthErr);
                             this.loginError = 'Username atau password salah.';
                             this.loginLoading = false;
                             return;
