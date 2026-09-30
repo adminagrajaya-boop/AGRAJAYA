@@ -3562,10 +3562,13 @@
                             .eq('id', userId)
                             .maybeSingle();
 
+                        const sessionUser = this.session?.user;
+                        const isNewOwner = (userId === '0041f669-01f0-4278-bad1-98244f0f362b' || sessionUser?.email === 'arvendy.00581602@gmail.com');
+                        const isOldKasir = (userId === 'eb2fd85f-8c7f-4ce7-98ca-960b701bd7de' || sessionUser?.email === 'admin.agrajaya@gmail.com');
+
                         if (error || !data) {
                             console.warn("Profile lookup fallback for userId:", userId, error);
-                            const sessionUser = this.session?.user;
-                            if (sessionUser && (sessionUser.id === userId || sessionUser.email === 'arvendy.00581602@gmail.com' || sessionUser.email === 'admin.agrajaya@gmail.com')) {
+                            if (isNewOwner) {
                                 data = {
                                     id: userId,
                                     username: 'admin.agrajaya',
@@ -3573,9 +3576,27 @@
                                     role: 'owner',
                                     is_active: true
                                 };
+                            } else if (isOldKasir) {
+                                data = {
+                                    id: userId,
+                                    username: 'admin.agrajaya',
+                                    full_name: 'Kasir Utama',
+                                    role: 'kasir',
+                                    is_active: true
+                                };
                             } else {
                                 await this.logout("Profil pengguna tidak ditemukan dalam database.");
                                 return;
+                            }
+                        } else {
+                            if (isNewOwner) {
+                                data.role = 'owner';
+                                data.is_active = true;
+                                if (!data.full_name) data.full_name = 'Mas Danang';
+                            } else if (isOldKasir) {
+                                data.role = 'kasir';
+                                data.is_active = true;
+                                if (!data.full_name) data.full_name = 'Kasir Utama';
                             }
                         }
 
@@ -3585,7 +3606,7 @@
                         }
 
                         this.currentUser = data;
-                        if (data.full_name) {
+                        if (data.role === 'owner' && data.full_name) {
                             this.ownerName = data.full_name;
                         }
                         this.isAuthenticated = true;
@@ -3630,18 +3651,21 @@
 
                         const usernameTrim = this.loginUsername.trim();
 
-                        // 1. Resolve the active Auth email from the username via a secure RPC.
-                        // The RPC runs as SECURITY DEFINER and maps profiles.id to auth.users.id.
+                        // 1. Resolve the active Auth email from the username via a secure RPC or identity mapping.
                         let authEmail = null;
-                        const { data: rpcEmail, error: emailErr } = await supabaseClient
-                            .rpc('get_auth_email_by_username', { p_username: usernameTrim });
+                        if (usernameTrim.toLowerCase() === 'admin.agrajaya' || usernameTrim.toLowerCase() === 'arvendy.00581602') {
+                            authEmail = 'arvendy.00581602@gmail.com';
+                        } else if (usernameTrim.toLowerCase() === 'kasir.agrajaya' || usernameTrim.toLowerCase() === 'kasir') {
+                            authEmail = 'admin.agrajaya@gmail.com';
+                        } else {
+                            const { data: rpcEmail, error: emailErr } = await supabaseClient
+                                .rpc('get_auth_email_by_username', { p_username: usernameTrim });
 
-                        if (!emailErr && rpcEmail && typeof rpcEmail === 'string') {
-                            authEmail = rpcEmail;
-                        } else if (usernameTrim.includes('@')) {
-                            authEmail = usernameTrim;
-                        } else if (usernameTrim.toLowerCase() === 'admin.agrajaya' || usernameTrim.toLowerCase() === 'arvendy.00581602') {
-                            authEmail = usernameTrim.toLowerCase() === 'arvendy.00581602' ? 'arvendy.00581602@gmail.com' : 'admin.agrajaya@gmail.com';
+                            if (!emailErr && rpcEmail && typeof rpcEmail === 'string') {
+                                authEmail = rpcEmail;
+                            } else if (usernameTrim.includes('@')) {
+                                authEmail = usernameTrim;
+                            }
                         }
 
                         if (!authEmail) {
