@@ -3618,17 +3618,17 @@
 
                         // 1. Resolve the active Auth email from the username via a secure RPC.
                         // The RPC runs as SECURITY DEFINER and maps profiles.id to auth.users.id.
-                        const { data: authEmail, error: emailErr } = await supabaseClient
+                        let authEmail = null;
+                        const { data: rpcEmail, error: emailErr } = await supabaseClient
                             .rpc('get_auth_email_by_username', { p_username: usernameTrim });
 
-                        if (emailErr) {
-                            console.error('Auth email lookup error:', emailErr);
-                            this.loginError = 'Username atau password tidak valid.';
-                            this.loginLoading = false;
-                            return;
+                        if (!emailErr && rpcEmail && typeof rpcEmail === 'string') {
+                            authEmail = rpcEmail;
+                        } else if (usernameTrim.includes('@')) {
+                            authEmail = usernameTrim;
                         }
 
-                        if (!authEmail || typeof authEmail !== 'string') {
+                        if (!authEmail) {
                             this.loginError = 'Username atau password tidak valid.';
                             this.loginLoading = false;
                             return;
