@@ -4323,7 +4323,7 @@
                             stock_after: change.newStock,
                             reference_code: referenceCode || null,
                             note: `${notePrefix} ${referenceCode || ''}`.trim(),
-                            created_by: this.currentUser.id
+                            created_by: this.currentUser?.id || null
                         }));
 
                         let { error: logError } = await supabaseClient
@@ -6812,7 +6812,7 @@
                                 stock_after: newStock,
                                 reference_code: null,
                                 note: 'Penyesuaian stok manual',
-                                created_by: this.currentUser.id
+                                created_by: this.currentUser?.id || null
                             });
 
                         if (logError) {
@@ -6970,7 +6970,7 @@
                                         stock_after: stock,
                                         reference_code: null,
                                         note: 'Penyesuaian stok via Edit Produk',
-                                        created_by: this.currentUser.id
+                                        created_by: this.currentUser?.id || null
                                     });
                                 if (logError) console.error('Stock log insert error:', logError);
                             }
