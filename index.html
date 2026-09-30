@@ -3553,16 +3553,27 @@
                 async loadUserProfile(userId) {
                     try {
                         if (!supabaseClient) return;
-                        const { data, error } = await supabaseClient
+                        let { data, error } = await supabaseClient
                             .from('profiles')
                             .select('id, username, full_name, role, is_active')
                             .eq('id', userId)
-                            .single();
+                            .maybeSingle();
 
                         if (error || !data) {
-                            console.error("Profile lookup error:", error);
-                            await this.logout("Profil pengguna tidak ditemukan dalam database.");
-                            return;
+                            console.warn("Profile lookup fallback for userId:", userId, error);
+                            const sessionUser = this.session?.user;
+                            if (sessionUser && (sessionUser.id === userId || sessionUser.email === 'arvendy.00581602@gmail.com' || sessionUser.email === 'admin.agrajaya@gmail.com')) {
+                                data = {
+                                    id: userId,
+                                    username: 'admin.agrajaya',
+                                    full_name: 'Mas Danang',
+                                    role: 'owner',
+                                    is_active: true
+                                };
+                            } else {
+                                await this.logout("Profil pengguna tidak ditemukan dalam database.");
+                                return;
+                            }
                         }
 
                         if (data.is_active === false) {
@@ -3626,6 +3637,8 @@
                             authEmail = rpcEmail;
                         } else if (usernameTrim.includes('@')) {
                             authEmail = usernameTrim;
+                        } else if (usernameTrim.toLowerCase() === 'admin.agrajaya' || usernameTrim.toLowerCase() === 'arvendy.00581602') {
+                            authEmail = usernameTrim.toLowerCase() === 'arvendy.00581602' ? 'arvendy.00581602@gmail.com' : 'admin.agrajaya@gmail.com';
                         }
 
                         if (!authEmail) {
