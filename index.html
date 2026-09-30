@@ -3951,14 +3951,15 @@
 
                             this.penawaranList = remoteQuotations.map(row => {
                                 const qid = Number(row.id);
+                                const dateVal = this.normalizeSupabaseDate(row.created_at) || this.getLocalDateString();
                                 return {
                                     id: qid,
                                     supabaseId: qid,
                                     qtNo: row.qt_no,
                                     customerName: row.customer_name,
                                     projectId: Number(row.project_id) || null,
-                                    validUntil: row.valid_until || '14 Hari',
-                                    date: this.normalizeSupabaseDate(row.created_at),
+                                    validUntil: this.normalizeSupabaseDate(row.valid_until) || this.addDaysToDateString(dateVal, 14),
+                                    date: dateVal,
                                     status: row.status || 'Draft',
                                     total: Number(row.total),
                                     items: itemsByQtId[qid] || []
@@ -4011,6 +4012,22 @@
                     const m = String(d.getMonth() + 1).padStart(2, '0');
                     const day = String(d.getDate()).padStart(2, '0');
                     return `${y}-${m}-${day}`;
+                },
+
+                addDaysToDateString(dateStr, days = 14) {
+                    let cleanDateStr = dateStr;
+                    if (!cleanDateStr || typeof cleanDateStr !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(cleanDateStr)) {
+                        cleanDateStr = this.getLocalDateString();
+                    }
+                    const parts = cleanDateStr.split('-');
+                    const year = parseInt(parts[0], 10);
+                    const month = parseInt(parts[1], 10) - 1;
+                    const day = parseInt(parts[2], 10);
+                    const d = new Date(year, month, day + days);
+                    const y = d.getFullYear();
+                    const m = String(d.getMonth() + 1).padStart(2, '0');
+                    const dd = String(d.getDate()).padStart(2, '0');
+                    return `${y}-${m}-${dd}`;
                 },
 
                 async getNextProjectId() {
@@ -4845,7 +4862,14 @@
 
                 // QUOTATION LOGIC
                 openAddQuotationModal() {
-                    this.newQt = { customerName: '', projectName: '', date: this.getLocalDateString(), validUntil: '', items: [] };
+                    const todayStr = this.getLocalDateString();
+                    this.newQt = {
+                        customerName: '',
+                        projectName: '',
+                        date: todayStr,
+                        validUntil: this.addDaysToDateString(todayStr, 14),
+                        items: []
+                    };
                     this.showAddQuotationModal = true;
                 },
 
@@ -4951,7 +4975,10 @@
                     }
 
                     const qtNo = this.generateCode('QT', this.penawaranList, 'qtCounter');
-                    const dateStr = this.getLocalDateString();
+                    const dateStr = (this.newQt.date && /^\d{4}-\d{2}-\d{2}$/.test(this.newQt.date)) ? this.newQt.date : this.getLocalDateString();
+                    const validUntilStr = (this.newQt.validUntil && /^\d{4}-\d{2}-\d{2}$/.test(this.newQt.validUntil))
+                        ? this.newQt.validUntil
+                        : this.addDaysToDateString(dateStr, 14);
 
                     let insertedQtId = null;
                     try {
@@ -4960,7 +4987,7 @@
                             customer_id: null,
                             customer_name: customerName,
                             project_id: Number.isSafeInteger(Number(this.newQt.projectId)) ? Number(this.newQt.projectId) : null,
-                            valid_until: this.newQt.validUntil || '14 Hari',
+                            valid_until: validUntilStr,
                             status: 'Draft',
                             total: computedTotal,
                             created_by: this.currentUser.id
@@ -5007,7 +5034,7 @@
                         supabaseId: insertedQtId,
                         qtNo: qtNo,
                         date: dateStr,
-                        validUntil: this.newQt.validUntil || '14 Hari',
+                        validUntil: validUntilStr,
                         customerName: customerName,
                         projectName: this.newQt.projectName || 'Proyek Closed House',
                         items: validatedItems,
