@@ -683,20 +683,44 @@
                                                 <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase"
                                                     :class="{
                                                         'bg-amber-100 text-amber-800': qt.status === 'Draft' || qt.status === 'Sent',
-                                                        'bg-emerald-100 text-emerald-800': qt.status === 'Approved',
+                                                        'bg-emerald-100 text-emerald-800': qt.status === 'Approved' || qt.status === 'Deal',
+                                                        'bg-blue-100 text-blue-800': qt.status === 'Converted' || qt.status === 'Invoiced',
                                                         'bg-rose-100 text-rose-800': qt.status === 'Rejected' || qt.status === 'Expired'
-                                                    }" x-text="qt.status"></span>
+                                                    }" x-text="qt.status === 'Approved' || qt.status === 'Deal' ? 'DEAL / APPROVED' : (qt.status === 'Converted' || qt.status === 'Invoiced' ? 'SUDAH JADI INVOICE' : qt.status)"></span>
                                             </td>
                                             <td class="p-3 text-center space-x-1">
-                                                <button
-                                                    x-show="qt.status !== 'Approved' && qt.status !== 'Rejected' && qt.status !== 'Expired'"
+                                                <!-- Cetak PDF Penawaran -->
+                                                <button @click="printQuotationPdf(qt)"
+                                                    class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] rounded-lg border transition-all" title="Cetak / Simpan PDF">
+                                                    <i class="fa-solid fa-file-pdf text-rose-600 mr-1"></i> PDF
+                                                </button>
+                                                <!-- Share PDF Penawaran -->
+                                                <button @click="shareQuotationPdf(qt)"
+                                                    class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] rounded-lg border transition-all" title="Bagikan PDF">
+                                                    <i class="fa-solid fa-share-nodes text-brand-600"></i>
+                                                </button>
+                                                <!-- Edit Penawaran (Jika belum jadi invoice) -->
+                                                <button x-show="qt.status !== 'Converted' && qt.status !== 'Invoiced'"
+                                                    @click="editQuotation(qt)"
+                                                    class="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white font-bold text-[11px] rounded-lg shadow transition-all" title="Edit Penawaran">
+                                                    <i class="fa-solid fa-pen-to-square mr-1"></i> Edit
+                                                </button>
+                                                <!-- Tandai Setuju / Deal -->
+                                                <button x-show="qt.status === 'Draft' || qt.status === 'Sent'"
+                                                    @click="approveQuotation(qt)"
+                                                    class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-lg shadow transition-all" title="Tandai Setuju / Deal">
+                                                    <i class="fa-solid fa-handshake mr-1"></i> SETUJUI / DEAL
+                                                </button>
+                                                <!-- Jadikan Invoice (HANYA jika status APPROVED / DEAL) -->
+                                                <button x-show="qt.status === 'Approved' || qt.status === 'Deal'"
                                                     @click="convertQuotationToInvoice(qt)"
-                                                    class="px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white font-bold text-[11px] rounded-lg shadow transition-all">
+                                                    class="px-3 py-1 bg-brand-600 hover:bg-brand-700 text-white font-bold text-[11px] rounded-lg shadow transition-all">
                                                     <i class="fa-solid fa-file-invoice mr-1"></i> JADIKAN INVOICE
                                                 </button>
-                                                <span x-show="qt.status === 'Approved'"
-                                                    class="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                                                    <i class="fa-solid fa-check mr-1"></i> Sudah Jadi Invoice
+                                                <!-- Status Badge bila sudah converted -->
+                                                <span x-show="qt.status === 'Converted' || qt.status === 'Invoiced'"
+                                                    class="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 inline-block">
+                                                    <i class="fa-solid fa-check mr-1"></i> Selesai (Invoice Dibuat)
                                                 </span>
                                             </td>
                                         </tr>
@@ -774,6 +798,11 @@
                                                     title="Cetak Faktur PDF">
                                                     <i class="fa-solid fa-file-pdf"></i>
                                                     <span>PDF</span>
+                                                </button>
+                                                <button @click="shareInvoicePdf(inv)"
+                                                    class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] rounded-lg border transition-all"
+                                                    title="Bagikan PDF Invoice">
+                                                    <i class="fa-solid fa-share-nodes text-brand-600"></i>
                                                 </button>
                                                 <button @click="openPayPiutangModal(inv)"
                                                     class="px-2.5 py-1 text-white font-bold text-[10px] rounded-lg shadow transition-all"
@@ -2530,7 +2559,7 @@
             class="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
             <div class="bg-white rounded-3xl max-w-lg w-full p-5 space-y-3 shadow-2xl max-h-[90vh] overflow-y-auto">
                 <div class="flex justify-between items-center pb-2 border-b border-slate-100">
-                    <h3 class="font-bold text-slate-800 text-sm">Buat Penawaran Harga Baru</h3>
+                    <h3 class="font-bold text-slate-800 text-sm" x-text="editingQtId ? 'Edit Penawaran Harga (' + (newQt.qtNo || '') + ')' : 'Buat Penawaran Harga Baru'"></h3>
                     <button @click="showAddQuotationModal = false" class="text-slate-400"><i
                             class="fa-solid fa-xmark text-base"></i></button>
                 </div>
@@ -2578,16 +2607,33 @@
                     </div>
 
                     <!-- Items Table -->
-                    <div class="border rounded-xl p-2 bg-slate-50 space-y-1.5 max-h-36 overflow-y-auto">
+                    <div class="border rounded-xl p-2 bg-slate-50 space-y-1.5 max-h-48 overflow-y-auto">
                         <template x-for="(item, idx) in newQt.items" :key="idx">
-                            <div class="flex items-center justify-between bg-white p-2 rounded-lg border text-[11px]">
+                            <div class="flex items-center justify-between bg-white p-2 rounded-lg border text-[11px] gap-2">
                                 <span class="font-bold flex-1 truncate" x-text="item.name"></span>
-                                <input type="number" x-model.number="item.qty"
-                                    class="w-12 text-center border rounded px-1 py-0.5 mx-2">
+                                <div class="flex items-center gap-1">
+                                    <span class="text-slate-400">Qty:</span>
+                                    <input type="number" min="1" x-model.number="item.qty"
+                                        class="w-12 text-center border rounded px-1 py-0.5">
+                                </div>
+                                <div class="flex items-center gap-1">
+                                    <span class="text-slate-400">Rp:</span>
+                                    <input type="number" min="0" x-model.number="item.price"
+                                        class="w-20 text-right border rounded px-1 py-0.5">
+                                </div>
                                 <span class="font-bold text-brand-600 min-w-[70px] text-right"
-                                    x-text="formatRupiah(item.price * item.qty)"></span>
+                                    x-text="formatRupiah((item.price || 0) * (item.qty || 0))"></span>
+                                <button @click="newQt.items.splice(idx, 1)" class="text-rose-500 hover:text-rose-700 px-1" title="Hapus Item">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
                             </div>
                         </template>
+                    </div>
+
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Catatan / Ketentuan Penawaran (Opsional)</label>
+                        <textarea x-model="newQt.notes" rows="2" placeholder="misal: Harga belum termasuk ongkos kirim dan jasa garansi 1 tahun."
+                            class="w-full px-2.5 py-1.5 bg-slate-50 border rounded-xl"></textarea>
                     </div>
 
                     <div class="flex justify-between items-center text-xs font-bold pt-2 border-t">
@@ -2597,8 +2643,8 @@
                 </div>
 
                 <button @click="saveQuotation()"
-                    class="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl text-xs">
-                    Simpan Penawaran
+                    class="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl text-xs"
+                    x-text="editingQtId ? 'Perbarui Penawaran' : 'Simpan Penawaran'">
                 </button>
             </div>
         </div>
@@ -3408,78 +3454,22 @@
                 invCounter: 1,
 
                 // Products Data
-                products: [
-                    { id: 1, name: 'Blower Fan 50 Inch 1.1kW', category: 'Closed House Hardware', price: 4800000, costPrice: 4100000, stock: 8, unit: 'Unit', type: 'barang' },
-                    { id: 2, name: 'Cooling Pad Cell Deck 180x60x15', category: 'Closed House Hardware', price: 320000, costPrice: 260000, stock: 45, unit: 'Pcs', type: 'barang' },
-                    { id: 3, name: 'Climate Controller Temtron 304', category: 'Closed House Hardware', price: 6500000, costPrice: 5800000, stock: 3, unit: 'Unit', type: 'barang' },
-                    { id: 4, name: 'Nipple Drinker Broiler Assembly', category: 'Peralatan Kandang', price: 15000, costPrice: 9500, stock: 500, unit: 'Pcs', type: 'barang' },
-                    { id: 5, name: 'Pan Feeder Tempat Makan Ayam', category: 'Peralatan Kandang', price: 65000, costPrice: 48000, stock: 120, unit: 'Pcs', type: 'barang' },
-                    { id: 6, name: 'Motor Auger Feed Line 0.75kW', category: 'Closed House Hardware', price: 2200000, costPrice: 1850000, stock: 4, unit: 'Unit', type: 'barang' },
-                    { id: 7, name: 'Jasa Instalasi Panel Inverter', category: 'Jasa & Servis', price: 1500000, costPrice: 0, stock: 0, unit: 'Kandang', type: 'jasa' },
-                    { id: 8, name: 'Konsultasi & Layout Closed House', category: 'Jasa & Servis', price: 2500000, costPrice: 0, stock: 0, unit: 'Proyek', type: 'jasa' }
-                ],
+                products: [],
 
                 // Quotations Data
-                penawaranList: [
-                    {
-                        id: 1,
-                        qtNo: 'QT-2023-000001',
-                        date: '2023-10-15',
-                        validUntil: '2023-10-30',
-                        customerName: 'Pak Haji Farhan',
-                        projectName: 'Closed House Broiler Subang',
-                        items: [{ productId: 1, name: 'Blower Fan 50 Inch 1.1kW', qty: 6, price: 4800000 }],
-                        total: 28800000,
-                        status: 'Draft'
-                    }
-                ],
-                newQt: { customerName: '', projectName: '', date: '', validUntil: '', items: [] },
+                penawaranList: [],
+                editingQtId: null,
+                newQt: { customerName: '', projectName: '', date: '', validUntil: '', notes: '', items: [] },
                 selectedQtProductId: '',
 
                 // Invoices Data
-                invoiceList: [
-                    {
-                        id: 1,
-                        invNo: 'INV-2023-000001',
-                        date: '2023-10-10',
-                        dueDate: '2023-11-10',
-                        customerName: 'CV Poultry Sukabumi',
-                        customerFarm: 'Kandang Utama',
-                        total: 15000000,
-                        paidAmount: 5000000,
-                        remaining: 10000000,
-                        status: 'Sebagian'
-                    }
-                ],
+                invoiceList: [],
 
                 // Customer Receivables (Piutang)
-                piutangList: [
-                    {
-                        id: 1,
-                        invNo: 'INV-2023-000001',
-                        customerName: 'CV Poultry Sukabumi',
-                        customerFarm: 'Kandang Utama',
-                        dueDate: '2023-11-10',
-                        total: 15000000,
-                        paid: 5000000,
-                        remaining: 10000000
-                    }
-                ],
+                piutangList: [],
 
                 // Purchases Data (PO)
-                pembelianList: [
-                    {
-                        id: 1,
-                        poNo: 'PO-2023-000001',
-                        date: '2023-10-05',
-                        supplierName: 'PT Broiler Tech Indonesia',
-                        items: [{ productId: 1, name: 'Blower Fan 50 Inch 1.1kW', qty: 5, costPrice: 4100000 }],
-                        total: 20500000,
-                        paidAmount: 20500000,
-                        remaining: 0,
-                        paymentMethod: 'Tunai'
-                    }
-                ],
+                pembelianList: [],
                 newPo: { supplierName: '', paymentMethod: 'Tunai', items: [] },
                 selectedPoProductId: '',
 
@@ -3487,24 +3477,10 @@
                 hutangList: [],
 
                 // Projects
-                projects: [
-                    { id: 101, clientName: 'Kandang Pak H. Budi', location: 'Subang, Jabar', scope: 'Instalasi 6 Blower & Climate Controller', value: 38000000, status: 'Dalam Pengerjaan', date: '12 Okt 2023' }
-                ],
+                projects: [],
 
                 // Transactions History
-                transactionHistory: [
-                    {
-                        id: 1,
-                        code: 'TRX-2023-000001',
-                        date: '2023-10-20',
-                        type: 'Jual',
-                        partyName: 'Pak Budi (Broiler Jaya)',
-                        items: [{ name: 'Nipple Drinker Broiler Assembly', qty: 100, price: 15000, costPrice: 9500 }],
-                        total: 1500000,
-                        profit: 550000,
-                        status: 'Completed'
-                    }
-                ],
+                transactionHistory: [],
 
                 ownerName: 'Dymas Danang',
                 businessAddress: 'Purwokerto, Indonesia',
@@ -3839,42 +3815,12 @@
                         }
 
                         if (remoteProducts.length === 0) {
-                            // One-time migration: preserve existing local IDs so quotation,
-                            // invoice, purchase and transaction snapshots remain compatible.
-                            const localProducts = Array.isArray(this.products) ? this.products : [];
-                            const payload = localProducts.map(item => ({
-                                id: Number.isSafeInteger(Number(item.id)) ? Number(item.id) : undefined,
-                                name: String(item.name || '').trim(),
-                                category: String(item.category || 'Peralatan Kandang'),
-                                price: Number(item.price),
-                                cost_price: Number(item.costPrice || 0),
-                                stock: item.type === 'jasa' ? 0 : Number(item.stock || 0),
-                                unit: String(item.unit || (item.type === 'jasa' ? 'Layanan' : 'Unit')),
-                                type: item.type === 'jasa' ? 'jasa' : 'barang'
-                            })).filter(item => item.name && Number.isFinite(item.price) && item.price >= 0 &&
-                                Number.isFinite(item.cost_price) && item.cost_price >= 0 &&
-                                Number.isFinite(item.stock) && item.stock >= 0);
-
-                            if (payload.length > 0) {
-                                const { data: insertedProducts, error: insertProductError } = await supabaseClient
-                                    .from('products')
-                                    .insert(payload)
-                                    .select('id, name, category, price, cost_price, stock, unit, type');
-
-                                if (insertProductError) throw insertProductError;
-                                if (!Array.isArray(insertedProducts) || insertedProducts.length !== payload.length) {
-                                    throw new Error('Migrasi produk tidak mengembalikan data lengkap.');
-                                }
-
-                                this.products = insertedProducts.map(this.mapSupabaseProduct);
-                            } else {
-                                this.products = [];
-                            }
+                            this.products = [];
                         } else {
                             this.products = remoteProducts.map(this.mapSupabaseProduct);
                         }
 
-                        // PROJECTS: same rule — migrate local data only when the table is empty.
+                        // PROJECTS: set to empty if remote is empty
                         const { data: remoteProjects, error: projectFetchError } = await supabaseClient
                             .from('projects')
                             .select('id, client_name, location, scope, value, status, project_date')
@@ -3887,33 +3833,7 @@
                         }
 
                         if (remoteProjects.length === 0) {
-                            const localProjects = Array.isArray(this.projects) ? this.projects : [];
-                            const payload = localProjects.map(project => ({
-                                id: Number.isSafeInteger(Number(project.id)) ? Number(project.id) : undefined,
-                                client_name: String(project.clientName || '').trim(),
-                                location: String(project.location || '').trim(),
-                                scope: String(project.scope || '').trim(),
-                                value: Number(project.value || 0),
-                                status: ['Persiapan', 'Dalam Pengerjaan', 'Selesai'].includes(project.status) ? project.status : 'Persiapan',
-                                project_date: this.normalizeSupabaseDate(project.date)
-                            })).filter(project => project.client_name && project.location && project.scope &&
-                                Number.isFinite(project.value) && project.value >= 0);
-
-                            if (payload.length > 0) {
-                                const { data: insertedProjects, error: insertProjectError } = await supabaseClient
-                                    .from('projects')
-                                    .insert(payload)
-                                    .select('id, client_name, location, scope, value, status, project_date');
-
-                                if (insertProjectError) throw insertProjectError;
-                                if (!Array.isArray(insertedProjects) || insertedProjects.length !== payload.length) {
-                                    throw new Error('Migrasi proyek tidak mengembalikan data lengkap.');
-                                }
-
-                                this.projects = insertedProjects.map(this.mapSupabaseProject);
-                            } else {
-                                this.projects = [];
-                            }
+                            this.projects = [];
                         } else {
                             this.projects = remoteProjects.map(this.mapSupabaseProject);
                         }
@@ -4063,6 +3983,26 @@
                 },
 
                 loadDataFromStorage() {
+                    if (!localStorage.getItem('agra_fresh_start_20260930')) {
+                        localStorage.removeItem('agra_products');
+                        localStorage.removeItem('agra_penawaran');
+                        localStorage.removeItem('agra_invoice');
+                        localStorage.removeItem('agra_piutang');
+                        localStorage.removeItem('agra_pembelian');
+                        localStorage.removeItem('agra_hutang');
+                        localStorage.removeItem('agra_projects');
+                        localStorage.removeItem('agra_transactions');
+                        localStorage.removeItem('agra_stock_logs');
+                        localStorage.removeItem('agra_payment_history');
+                        localStorage.setItem('agra_counters', JSON.stringify({
+                            trxCounter: 1,
+                            poCounter: 1,
+                            qtCounter: 1,
+                            invCounter: 1
+                        }));
+                        localStorage.setItem('agra_fresh_start_20260930', 'true');
+                    }
+
                     const keys = [
                         'agra_products', 'agra_penawaran', 'agra_invoice', 'agra_piutang',
                         'agra_pembelian', 'agra_hutang', 'agra_projects', 'agra_transactions',
@@ -4863,21 +4803,80 @@
                 // QUOTATION LOGIC
                 openAddQuotationModal() {
                     const todayStr = this.getLocalDateString();
+                    this.editingQtId = null;
                     this.newQt = {
                         customerName: '',
                         projectName: '',
                         date: todayStr,
                         validUntil: this.addDaysToDateString(todayStr, 14),
+                        notes: '',
                         items: []
                     };
                     this.showAddQuotationModal = true;
+                },
+
+                editQuotation(qt) {
+                    if (!qt) return;
+                    if (qt.status === 'Converted' || qt.status === 'Invoiced') {
+                        alert(`Penawaran ${qt.qtNo || ''} sudah dikonversi menjadi Invoice dan tidak dapat diubah.`);
+                        return;
+                    }
+                    this.editingQtId = qt.id;
+                    this.newQt = {
+                        qtNo: qt.qtNo,
+                        customerName: qt.customerName || '',
+                        projectName: qt.projectName || '',
+                        date: qt.date || this.getLocalDateString(),
+                        validUntil: qt.validUntil || this.addDaysToDateString(qt.date || this.getLocalDateString(), 14),
+                        notes: qt.notes || '',
+                        items: Array.isArray(qt.items) ? qt.items.map(i => ({
+                            productId: i.productId || i.id,
+                            name: i.name,
+                            category: i.category || 'General',
+                            unit: i.unit || 'Unit',
+                            qty: Number(i.qty) || 1,
+                            price: Number(i.price) || 0
+                        })) : []
+                    };
+                    this.showAddQuotationModal = true;
+                },
+
+                async approveQuotation(qt) {
+                    if (!qt) return;
+                    if (qt.status === 'Approved' || qt.status === 'Deal') {
+                        alert(`Penawaran ${qt.qtNo} sudah berstatus DEAL / APPROVED.`);
+                        return;
+                    }
+                    if (qt.status === 'Converted' || qt.status === 'Invoiced') {
+                        alert(`Penawaran ${qt.qtNo} sudah selesai (Invoice Dibuat).`);
+                        return;
+                    }
+
+                    const confirmApprove = confirm(`Tandai Penawaran ${qt.qtNo} sebagai DEAL / APPROVED?`);
+                    if (!confirmApprove) return;
+
+                    qt.status = 'Approved';
+
+                    try {
+                        if (supabaseClient && this.isAuthenticated && qt.id) {
+                            await supabaseClient
+                                .from('quotations')
+                                .update({ status: 'Approved' })
+                                .eq('id', qt.id);
+                        }
+                    } catch (err) {
+                        console.error('Error updating quotation status to Approved:', err);
+                    }
+
+                    this.saveDataToStorage();
+                    alert(`Penawaran ${qt.qtNo} berhasil ditandai DEAL / APPROVED! Sekarang quotation dapat dikonversi menjadi Invoice.`);
                 },
 
                 addItemToQuotation() {
                     if (!this.selectedQtProductId) return;
                     const prod = this.products.find(p => p.id == this.selectedQtProductId);
                     if (prod) {
-                        this.newQt.items.push({ productId: prod.id, name: prod.name, qty: 1, price: prod.price });
+                        this.newQt.items.push({ productId: prod.id, name: prod.name, qty: 1, price: prod.price, category: prod.category || 'General', unit: prod.unit || 'Unit' });
                     }
                 },
 
@@ -4961,8 +4960,8 @@
                         validatedItems.push({
                             productId: prod.id,
                             name: prod.name,
-                            category: prod.category || 'General',
-                            unit: prod.unit || 'Unit',
+                            category: prod.category || item.category || 'General',
+                            unit: prod.unit || item.unit || 'Unit',
                             qty: qty,
                             price: price,
                             subtotal: itemSubtotal
@@ -4974,12 +4973,73 @@
                         return;
                     }
 
-                    const qtNo = this.generateCode('QT', this.penawaranList, 'qtCounter');
                     const dateStr = (this.newQt.date && /^\d{4}-\d{2}-\d{2}$/.test(this.newQt.date)) ? this.newQt.date : this.getLocalDateString();
                     const validUntilStr = (this.newQt.validUntil && /^\d{4}-\d{2}-\d{2}$/.test(this.newQt.validUntil))
                         ? this.newQt.validUntil
                         : this.addDaysToDateString(dateStr, 14);
 
+                    if (this.editingQtId) {
+                        // EDIT MODE: Update existing quotation
+                        const existingQt = this.penawaranList.find(q => q.id === this.editingQtId);
+                        if (!existingQt) {
+                            alert('Data penawaran tidak ditemukan.');
+                            return;
+                        }
+
+                        try {
+                            const updatePayload = {
+                                customer_name: customerName,
+                                project_id: Number.isSafeInteger(Number(this.newQt.projectId)) ? Number(this.newQt.projectId) : null,
+                                valid_until: validUntilStr,
+                                total: computedTotal
+                            };
+
+                            const { error: qtUpdateErr } = await supabaseClient
+                                .from('quotations')
+                                .update(updatePayload)
+                                .eq('id', this.editingQtId);
+
+                            if (qtUpdateErr) throw qtUpdateErr;
+
+                            await supabaseClient.from('quotation_items').delete().eq('quotation_id', this.editingQtId);
+
+                            const itemsPayload = validatedItems.map(vi => ({
+                                quotation_id: this.editingQtId,
+                                product_id: Number.isSafeInteger(Number(vi.productId)) ? Number(vi.productId) : null,
+                                category: vi.category,
+                                unit: vi.unit,
+                                price: vi.price,
+                                qty: vi.qty
+                            }));
+
+                            const { error: itemsErr } = await supabaseClient
+                                .from('quotation_items')
+                                .insert(itemsPayload);
+
+                            if (itemsErr) throw itemsErr;
+
+                            existingQt.customerName = customerName;
+                            existingQt.projectName = this.newQt.projectName || 'Proyek Closed House';
+                            existingQt.date = dateStr;
+                            existingQt.validUntil = validUntilStr;
+                            existingQt.notes = this.newQt.notes || '';
+                            existingQt.items = validatedItems;
+                            existingQt.total = computedTotal;
+                        } catch (err) {
+                            console.error('Update quotation error:', err);
+                            alert('Gagal memperbarui penawaran di database: ' + (err.message || err));
+                            return;
+                        }
+
+                        this.editingQtId = null;
+                        this.saveDataToStorage();
+                        this.showAddQuotationModal = false;
+                        alert(`Penawaran ${existingQt.qtNo} berhasil diperbarui.`);
+                        return;
+                    }
+
+                    // CREATE MODE: Insert new quotation
+                    const qtNo = this.generateCode('QT', this.penawaranList, 'qtCounter');
                     let insertedQtId = null;
                     try {
                         const qtPayload = {
@@ -5037,6 +5097,7 @@
                         validUntil: validUntilStr,
                         customerName: customerName,
                         projectName: this.newQt.projectName || 'Proyek Closed House',
+                        notes: this.newQt.notes || '',
                         items: validatedItems,
                         total: computedTotal,
                         status: 'Draft'
@@ -5049,9 +5110,13 @@
                 async convertQuotationToInvoice(qt) {
                     if (!qt) return;
 
-                    // 1. Status Guard
-                    if (qt.status === 'Approved' || qt.status === 'Rejected' || qt.status === 'Expired') {
-                        alert(`Penawaran ${qt.qtNo || ''} tidak dapat dikonversi karena berstatus '${qt.status}'.`);
+                    // 1. Strict Status Guard: ONLY APPROVED / DEAL CAN BE CONVERTED
+                    if (qt.status !== 'Approved' && qt.status !== 'Deal') {
+                        if (qt.status === 'Converted' || qt.status === 'Invoiced') {
+                            alert(`Penawaran ${qt.qtNo || ''} sudah pernah dikonversi menjadi Invoice.`);
+                        } else {
+                            alert(`Penawaran ${qt.qtNo || ''} masih berstatus '${qt.status}'. Penawaran harus ditandai DEAL / APPROVED terlebih dahulu sebelum dapat dikonversi menjadi Invoice.`);
+                        }
                         return;
                     }
 
@@ -5373,12 +5438,12 @@
                         return;
                     }
 
-                    // 10. UPDATE REMOTE QUOTATION STATUS TO APPROVED (POST-JOURNAL COMMIT)
+                    // 10. UPDATE REMOTE QUOTATION STATUS TO CONVERTED (POST-JOURNAL COMMIT)
                     if (qtIdNum) {
                         try {
                             const { error: qtUpdErr } = await supabaseClient
                                 .from('quotations')
-                                .update({ status: 'Approved', updated_at: new Date().toISOString() })
+                                .update({ status: 'Converted', updated_at: new Date().toISOString() })
                                 .eq('id', qtIdNum);
 
                             if (qtUpdErr) {
@@ -5423,7 +5488,7 @@
                         });
                     }
 
-                    qt.status = 'Approved';
+                    qt.status = 'Converted';
 
                     if (typeof this.reloadAccountingData === 'function') {
                         try {
@@ -7119,6 +7184,283 @@
 
                 formatRupiah(number) {
                     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(number || 0);
+                },
+
+                printQuotationPdf(qtInput) {
+                    if (!qtInput) {
+                        alert('Data penawaran tidak ditemukan.');
+                        return;
+                    }
+                    let qt = qtInput;
+                    if (!qt.items && qt.qtNo && Array.isArray(this.penawaranList)) {
+                        const foundQt = this.penawaranList.find(q => q.qtNo === qt.qtNo || q.id === qt.id);
+                        if (foundQt) qt = foundQt;
+                    }
+                    try {
+                        const html = this.generateQuotationHtml(qt);
+                        const printWindow = window.open('', '_blank');
+                        if (!printWindow) {
+                            alert('Jendela cetak terblokir oleh browser. Harap izinkan pop-up (pop-up blocker) pada browser untuk mencetak penawaran.');
+                            return;
+                        }
+                        printWindow.document.open();
+                        printWindow.document.write(html);
+                        printWindow.document.close();
+                        printWindow.focus();
+                        setTimeout(() => {
+                            try {
+                                printWindow.print();
+                            } catch (err) {
+                                console.error('Print trigger error:', err);
+                            }
+                        }, 350);
+                    } catch (e) {
+                        console.error('Gagal mencetak penawaran PDF:', e);
+                        alert('Terjadi kesalahan saat memproses dokumen penawaran: ' + (e.message || e));
+                    }
+                },
+
+                shareQuotationPdf(qt) {
+                    if (!qt) return;
+                    const title = `Penawaran Harga ${qt.qtNo || ''}`;
+                    const text = `Berikut Surat Penawaran Harga ${qt.qtNo || ''} (${this.formatRupiah(qt.total)}) dari AGRA JAYA POS untuk ${qt.customerName || 'Mitra'}.`;
+                    if (navigator.share) {
+                        navigator.share({ title, text, url: window.location.href })
+                            .catch(err => {
+                                if (err && err.name !== 'AbortError') {
+                                    this.printQuotationPdf(qt);
+                                }
+                            });
+                    } else {
+                        this.printQuotationPdf(qt);
+                    }
+                },
+
+                shareInvoicePdf(inv) {
+                    if (!inv) return;
+                    const title = `Tagihan Invoice ${inv.invNo || ''}`;
+                    const text = `Berikut Faktur Tagihan Invoice ${inv.invNo || ''} (${this.formatRupiah(inv.total)}) dari AGRA JAYA POS untuk ${inv.customerName || 'Pelanggan'}.`;
+                    if (navigator.share) {
+                        navigator.share({ title, text, url: window.location.href })
+                            .catch(err => {
+                                if (err && err.name !== 'AbortError') {
+                                    this.printInvoicePdf(inv);
+                                }
+                            });
+                    } else {
+                        this.printInvoicePdf(inv);
+                    }
+                },
+
+                generateQuotationHtml(qt) {
+                    const escapeHtml = (str) => {
+                        if (str === null || str === undefined) return '';
+                        return String(str)
+                            .replace(/&/g, '&amp;')
+                            .replace(/</g, '&lt;')
+                            .replace(/>/g, '&gt;')
+                            .replace(/"/g, '&quot;')
+                            .replace(/'/g, '&#39;');
+                    };
+
+                    const formatRp = (val) => {
+                        const num = Number(val);
+                        return this.formatRupiah(Number.isFinite(num) ? num : 0);
+                    };
+
+                    const qtNo = qt.qtNo || ('QT-' + (qt.id || ''));
+                    const dateStr = qt.date || this.getLocalDateString();
+                    const validUntilStr = qt.validUntil || this.addDaysToDateString(dateStr, 14);
+                    const customerName = qt.customerName || 'Mitra / Pelanggan';
+                    const projectName = qt.projectName || 'Proyek Kandang Closed House';
+                    const notesStr = qt.notes || 'Harga belum termasuk ongkos kirim. Penawaran berlaku sesuai tanggal di atas.';
+                    const statusStr = qt.status || 'Draft';
+
+                    let items = Array.isArray(qt.items) ? qt.items : [];
+                    let computedTotal = 0;
+                    items.forEach(it => {
+                        const q = Number(it.qty) || 0;
+                        const p = Number(it.price) || 0;
+                        computedTotal += (q * p);
+                    });
+
+                    const grandTotal = (qt.total !== undefined && qt.total !== null && Number(qt.total) > 0)
+                        ? Number(qt.total)
+                        : computedTotal;
+
+                    let rowsHtml = '';
+                    if (items.length === 0) {
+                        rowsHtml = `
+                            <tr>
+                                <td colspan="6" style="text-align: center; padding: 28px 16px; color: #94a3b8; font-style: italic;">
+                                    Tidak ada rincian item produk/jasa pada penawaran ini.
+                                </td>
+                            </tr>
+                        `;
+                    } else {
+                        rowsHtml = items.map((it, idx) => {
+                            const name = it.name || it.productName || 'Item Peralatan / Jasa';
+                            const qty = Number(it.qty) || 1;
+                            const unit = it.unit || 'Unit';
+                            const price = Number(it.price) || 0;
+                            const itemTotal = qty * price;
+                            const category = it.category ? `<div style="font-size: 9.5px; color: #64748b; font-weight: normal; margin-top: 1px;">Kategori: ${escapeHtml(it.category)}</div>` : '';
+
+                            return `
+                                <tr>
+                                    <td class="col-no">${idx + 1}</td>
+                                    <td class="col-desc">
+                                        <div style="font-weight: 600; color: #0f172a;">${escapeHtml(name)}</div>
+                                        ${category}
+                                    </td>
+                                    <td class="col-qty">${qty}</td>
+                                    <td class="col-unit">${escapeHtml(unit)}</td>
+                                    <td class="col-price">${formatRp(price)}</td>
+                                    <td class="col-total">${formatRp(itemTotal)}</td>
+                                </tr>
+                            `;
+                        }).join('');
+                    }
+
+                    return `<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Penawaran Harga - ${escapeHtml(qtNo)}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #f1f5f9; color: #1e293b; font-size: 11px; }
+        .no-print-bar { background: #0f172a; color: #ffffff; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; }
+        .btn { padding: 6px 14px; border-radius: 8px; font-weight: 700; border: none; cursor: pointer; font-size: 11px; text-decoration: none; }
+        .btn-print { background: #0284c7; color: #ffffff; }
+        .btn-close { background: #475569; color: #ffffff; margin-left: 8px; }
+        .page-wrapper { display: flex; justify-content: center; padding: 20px; }
+        .invoice-sheet { width: 210mm; min-height: 297mm; background: #ffffff; padding: 18mm 16mm; border-radius: 8px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); display: flex; flex-direction: column; justify-content: space-between; }
+        .inv-header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 14px; border-bottom: 2px solid #0f172a; }
+        .brand-title { font-size: 22px; font-weight: 800; color: #0f172a; }
+        .brand-sub { font-size: 11px; font-weight: 600; color: #0284c7; }
+        .brand-meta { font-size: 10px; color: #64748b; margin-top: 3px; }
+        .doc-badge { font-size: 18px; font-weight: 800; letter-spacing: 1px; color: #0f172a; text-transform: uppercase; }
+        .doc-meta-table { margin-left: auto; border-collapse: collapse; font-size: 11px; }
+        .doc-meta-table td { padding: 2px 6px; }
+        .meta-label { font-weight: 600; color: #64748b; text-align: right; }
+        .meta-val { font-weight: 700; color: #0f172a; text-align: right; }
+        .party-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 14px; margin-bottom: 16px; }
+        .party-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; }
+        .party-title { font-size: 9.5px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 4px; }
+        .party-name { font-size: 13px; font-weight: 800; color: #0f172a; }
+        .items-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10.5px; }
+        .items-table th { background: #0f172a; color: #ffffff; font-weight: 700; padding: 8px 10px; text-align: left; }
+        .items-table td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; }
+        .col-no { width: 32px; text-align: center; }
+        .col-qty { width: 50px; text-align: center; font-weight: 700; }
+        .col-unit { width: 60px; text-align: center; }
+        .col-price { width: 100px; text-align: right; }
+        .col-total { width: 110px; text-align: right; font-weight: 700; color: #0f172a; }
+        .summary-box { background: #0f172a; color: #ffffff; padding: 12px 16px; border-radius: 8px; margin-top: 16px; display: flex; justify-content: space-between; align-items: center; }
+        .summary-title { font-size: 12px; font-weight: 700; }
+        .summary-total { font-size: 18px; font-weight: 800; color: #38bdf8; }
+        .notes-box { background: #f8fafc; border-left: 3px solid #0284c7; padding: 10px 12px; border-radius: 4px; margin-top: 14px; font-size: 10px; color: #475569; }
+        .sign-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 30px; }
+        .sign-col { text-align: center; font-size: 11px; }
+        .sign-role { font-weight: 700; color: #334155; margin-bottom: 55px; }
+        .sign-name { font-weight: 700; color: #0f172a; border-top: 1px solid #94a3b8; display: inline-block; min-width: 170px; padding-top: 4px; }
+        @page { size: A4 portrait; margin: 12mm 14mm; }
+        @media print {
+            body { background: #fff !important; padding: 0 !important; }
+            .no-print-bar { display: none !important; }
+            .page-wrapper { padding: 0 !important; display: block !important; }
+            .invoice-sheet { width: 100% !important; box-shadow: none !important; border-radius: 0 !important; padding: 0 !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="no-print-bar">
+        <div>
+            <i class="fa-solid fa-file-contract" style="color:#38bdf8;"></i>
+            <strong>Pratinjau Surat Penawaran Harga (A4)</strong> • ${escapeHtml(qtNo)}
+        </div>
+        <div>
+            <button onclick="window.print()" class="btn btn-print"><i class="fa-solid fa-print"></i> Cetak / Simpan PDF</button>
+            <button onclick="window.close()" class="btn btn-close"><i class="fa-solid fa-xmark"></i> Tutup</button>
+        </div>
+    </div>
+    <div class="page-wrapper">
+        <div class="invoice-sheet">
+            <div>
+                <div class="inv-header">
+                    <div>
+                        <div class="brand-title">AGRA JAYA</div>
+                        <div class="brand-sub">Peralatan & Instalasi Closed House</div>
+                        <div class="brand-meta">
+                            <div>${escapeHtml(this.businessAddress || 'Purwokerto, Indonesia')}</div>
+                            <div>Telp / WA: ${escapeHtml(this.businessPhone || '+62 821-3878-5510')}</div>
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div class="doc-badge">PENAWARAN HARGA</div>
+                        <table class="doc-meta-table">
+                            <tr><td class="meta-label">No. Penawaran:</td><td class="meta-val">${escapeHtml(qtNo)}</td></tr>
+                            <tr><td class="meta-label">Tanggal:</td><td class="meta-val">${escapeHtml(dateStr)}</td></tr>
+                            <tr><td class="meta-label">Berlaku s/d:</td><td class="meta-val">${escapeHtml(validUntilStr)}</td></tr>
+                            <tr><td class="meta-label">Status:</td><td class="meta-val">${escapeHtml(statusStr.toUpperCase())}</td></tr>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="party-grid">
+                    <div class="party-box">
+                        <div class="party-title">Kepada Yth. (Mitra / Pelanggan)</div>
+                        <div class="party-name">${escapeHtml(customerName)}</div>
+                    </div>
+                    <div class="party-box">
+                        <div class="party-title">Nama Proyek / Lokasi Kandang</div>
+                        <div class="party-name">${escapeHtml(projectName)}</div>
+                    </div>
+                </div>
+
+                <table class="items-table">
+                    <thead>
+                        <tr>
+                            <th class="col-no">No</th>
+                            <th>Rincian Produk / Pekerjaan</th>
+                            <th class="col-qty">Qty</th>
+                            <th class="col-unit">Satuan</th>
+                            <th class="col-price">Harga Satuan</th>
+                            <th class="col-total">Subtotal</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rowsHtml}
+                    </tbody>
+                </table>
+
+                <div class="summary-box">
+                    <div class="summary-title">TOTAL NILAI PENAWARAN HARGA</div>
+                    <div class="summary-total">${formatRp(grandTotal)}</div>
+                </div>
+
+                <div class="notes-box">
+                    <strong>Catatan & Ketentuan Penawaran:</strong><br>
+                    ${escapeHtml(notesStr)}
+                </div>
+            </div>
+
+            <div class="sign-grid">
+                <div class="sign-col">
+                    <div class="sign-role">Pemberi Penawaran (AGRA JAYA)</div>
+                    <div class="sign-name">${escapeHtml(this.ownerName || 'Dymas Danang')}</div>
+                </div>
+                <div class="sign-col">
+                    <div class="sign-role">Persetujuan Mitra / Pelanggan (DEAL)</div>
+                    <div class="sign-name">${escapeHtml(customerName)}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>`;
                 },
 
                 printInvoicePdf(invInput) {
