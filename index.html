@@ -2557,7 +2557,7 @@
         <!-- MODAL: BUAT PENAWARAN (QUOTATION) -->
         <div x-show="showAddQuotationModal" x-transition
             class="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
-            <div class="bg-white rounded-3xl max-w-lg w-full p-5 space-y-3 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div class="bg-white rounded-3xl max-w-2xl w-full p-5 space-y-3 shadow-2xl max-h-[90vh] overflow-y-auto">
                 <div class="flex justify-between items-center pb-2 border-b border-slate-100">
                     <h3 class="font-bold text-slate-800 text-sm" x-text="editingQtId ? 'Edit Penawaran Harga (' + (newQt.qtNo || '') + ')' : 'Buat Penawaran Harga Baru'"></h3>
                     <button @click="showAddQuotationModal = false" class="text-slate-400"><i
@@ -2602,32 +2602,63 @@
                                 </template>
                             </select>
                             <button @click="addItemToQuotation()"
-                                class="bg-brand-600 text-white font-bold px-3 py-1.5 rounded-xl">Tambah</button>
+                                class="bg-brand-600 hover:bg-brand-700 text-white font-bold px-3 py-1.5 rounded-xl transition-colors">
+                                <i class="fa-solid fa-plus mr-1"></i>Tambah Item
+                            </button>
                         </div>
                     </div>
 
-                    <!-- Items Table -->
-                    <div class="border rounded-xl p-2 bg-slate-50 space-y-1.5 max-h-48 overflow-y-auto">
+                    <!-- Items Table with Discount Options -->
+                    <div class="border rounded-xl p-2 bg-slate-50 space-y-2 max-h-60 overflow-y-auto">
                         <template x-for="(item, idx) in newQt.items" :key="idx">
-                            <div class="flex items-center justify-between bg-white p-2 rounded-lg border text-[11px] gap-2">
-                                <span class="font-bold flex-1 truncate" x-text="item.name"></span>
-                                <div class="flex items-center gap-1">
-                                    <span class="text-slate-400">Qty:</span>
-                                    <input type="number" min="1" x-model.number="item.qty"
-                                        class="w-12 text-center border rounded px-1 py-0.5">
+                            <div class="bg-white p-2.5 rounded-xl border text-[11px] space-y-1.5 shadow-sm">
+                                <div class="flex items-center justify-between font-bold text-slate-800">
+                                    <span class="truncate flex-1" x-text="(idx + 1) + '. ' + item.name"></span>
+                                    <button @click="newQt.items.splice(idx, 1)" class="text-rose-500 hover:text-rose-700 px-1 text-xs" title="Hapus Item">
+                                        <i class="fa-solid fa-trash"></i>
+                                    </button>
                                 </div>
-                                <div class="flex items-center gap-1">
-                                    <span class="text-slate-400">Rp:</span>
-                                    <input type="number" min="0" x-model.number="item.price"
-                                        class="w-20 text-right border rounded px-1 py-0.5">
+                                <div class="grid grid-cols-12 gap-2 items-center">
+                                    <div class="col-span-3">
+                                        <label class="block text-[10px] text-slate-500 font-semibold mb-0.5">Qty & Satuan</label>
+                                        <div class="flex items-center gap-1">
+                                            <input type="number" min="1" x-model.number="item.qty"
+                                                class="w-full text-center border rounded-lg px-1 py-1 font-bold">
+                                            <span class="text-[10px] text-slate-400" x-text="item.unit || 'Unit'"></span>
+                                        </div>
+                                    </div>
+                                    <div class="col-span-3">
+                                        <label class="block text-[10px] text-slate-500 font-semibold mb-0.5">Harga Satuan (Rp)</label>
+                                        <input type="number" min="0" x-model.number="item.price"
+                                            class="w-full text-right border rounded-lg px-1.5 py-1 font-semibold">
+                                    </div>
+                                    <div class="col-span-3">
+                                        <label class="block text-[10px] text-slate-500 font-semibold mb-0.5">Diskon Item</label>
+                                        <div class="flex items-center gap-1">
+                                            <select x-model="item.discountType"
+                                                class="text-[10px] border rounded-lg px-1 py-1 bg-slate-50">
+                                                <option value="none">Tidak Ada</option>
+                                                <option value="percent">% (Persen)</option>
+                                                <option value="nominal">Rp (Nominal)</option>
+                                            </select>
+                                            <input x-show="item.discountType !== 'none'" type="number" min="0" x-model.number="item.discountValue"
+                                                :placeholder="item.discountType === 'percent' ? '%' : 'Rp'"
+                                                class="w-full text-right border rounded-lg px-1 py-1 text-[10px] font-semibold">
+                                        </div>
+                                    </div>
+                                    <div class="col-span-3 text-right">
+                                        <label class="block text-[10px] text-slate-500 font-semibold mb-0.5">Subtotal Net</label>
+                                        <span class="font-bold text-brand-600 block text-xs"
+                                            x-text="formatRupiah(getItemNetSubtotal(item))"></span>
+                                        <span x-show="getItemDiscountAmount(item) > 0" class="block text-[9px] text-emerald-600 font-medium"
+                                            x-text="'Diskon: -' + formatRupiah(getItemDiscountAmount(item))"></span>
+                                    </div>
                                 </div>
-                                <span class="font-bold text-brand-600 min-w-[70px] text-right"
-                                    x-text="formatRupiah((item.price || 0) * (item.qty || 0))"></span>
-                                <button @click="newQt.items.splice(idx, 1)" class="text-rose-500 hover:text-rose-700 px-1" title="Hapus Item">
-                                    <i class="fa-solid fa-trash"></i>
-                                </button>
                             </div>
                         </template>
+                        <div x-show="!newQt.items || newQt.items.length === 0" class="text-center py-4 text-slate-400 text-xs italic">
+                            Belum ada item penawaran. Pilih barang/jasa di atas.
+                        </div>
                     </div>
 
                     <div>
@@ -2636,14 +2667,25 @@
                             class="w-full px-2.5 py-1.5 bg-slate-50 border rounded-xl"></textarea>
                     </div>
 
-                    <div class="flex justify-between items-center text-xs font-bold pt-2 border-t">
-                        <span>Total Penawaran:</span>
-                        <span class="text-brand-600 text-sm" x-text="formatRupiah(calculateQtTotal())"></span>
+                    <!-- Summary Penawaran -->
+                    <div class="bg-slate-900 text-white rounded-xl p-3 space-y-1 text-xs">
+                        <div class="flex justify-between items-center text-slate-300">
+                            <span>Subtotal Kotor:</span>
+                            <span class="font-semibold" x-text="formatRupiah(calculateQtSubtotal())"></span>
+                        </div>
+                        <div class="flex justify-between items-center text-emerald-400" x-show="calculateQtDiscountTotal() > 0">
+                            <span>Total Diskon Penawaran:</span>
+                            <span class="font-semibold" x-text="'- ' + formatRupiah(calculateQtDiscountTotal())"></span>
+                        </div>
+                        <div class="flex justify-between items-center font-bold text-sm pt-1 border-t border-slate-700">
+                            <span>Grand Total Penawaran:</span>
+                            <span class="text-sky-400" x-text="formatRupiah(calculateQtTotal())"></span>
+                        </div>
                     </div>
                 </div>
 
                 <button @click="saveQuotation()"
-                    class="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl text-xs"
+                    class="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl text-xs transition-colors"
                     x-text="editingQtId ? 'Perbarui Penawaran' : 'Simpan Penawaran'">
                 </button>
             </div>
@@ -3841,13 +3883,13 @@
                         // QUOTATIONS & QUOTATION ITEMS FROM SUPABASE LIVE
                         const { data: remoteQuotations, error: qtFetchErr } = await supabaseClient
                             .from('quotations')
-                            .select('id, qt_no, customer_id, customer_name, project_id, valid_until, status, total, created_at')
+                            .select('id, qt_no, customer_id, customer_name, project_id, valid_until, status, subtotal, discount_total, total, created_at')
                             .order('id', { ascending: false });
 
                         if (!qtFetchErr && Array.isArray(remoteQuotations)) {
                             const { data: remoteQtItems } = await supabaseClient
                                 .from('quotation_items')
-                                .select('id, quotation_id, product_id, category, unit, price, qty, subtotal')
+                                .select('id, quotation_id, product_id, category, unit, price, qty, subtotal, discount_type, discount_value, discount_amount')
                                 .order('id', { ascending: true });
 
                             const itemsByQtId = {};
@@ -3856,15 +3898,27 @@
                                     const qid = Number(item.quotation_id);
                                     if (!itemsByQtId[qid]) itemsByQtId[qid] = [];
                                     const prod = (this.products || []).find(p => Number(p.id) === Number(item.product_id));
+                                    const q = Number(item.qty) || 0;
+                                    const p = Number(item.price) || 0;
+                                    const gross = q * p;
+                                    const discType = item.discount_type || 'none';
+                                    const discVal = Number(item.discount_value || 0);
+                                    const discAmt = Number(item.discount_amount || 0);
+                                    const net = Math.max(0, gross - discAmt);
+
                                     itemsByQtId[qid].push({
                                         id: Number(item.id),
                                         productId: Number(item.product_id),
                                         name: prod ? prod.name : 'Item Penawaran',
                                         category: item.category || 'General',
                                         unit: item.unit || 'Unit',
-                                        price: Number(item.price),
-                                        qty: Number(item.qty),
-                                        subtotal: Number(item.subtotal)
+                                        price: p,
+                                        qty: q,
+                                        discountType: discType,
+                                        discountValue: discVal,
+                                        discountAmount: discAmt,
+                                        grossSubtotal: gross,
+                                        subtotal: net
                                     });
                                 });
                             }
@@ -3881,10 +3935,101 @@
                                     validUntil: this.normalizeSupabaseDate(row.valid_until) || this.addDaysToDateString(dateVal, 14),
                                     date: dateVal,
                                     status: row.status || 'Draft',
-                                    total: Number(row.total),
+                                    subtotal: Number(row.subtotal || 0),
+                                    discountTotal: Number(row.discount_total || 0),
+                                    total: Number(row.total || 0),
                                     items: itemsByQtId[qid] || []
                                 };
                             });
+                        }
+
+                        // INVOICES & INVOICE ITEMS FROM SUPABASE LIVE
+                        const { data: remoteInvoices, error: invFetchErr } = await supabaseClient
+                            .from('invoices')
+                            .select('id, inv_no, customer_id, customer_name, customer_farm, due_date, invoice_date, status, subtotal, discount_total, total, paid_amount, remaining, project_id, quotation_id, transaction_id, created_at')
+                            .order('id', { ascending: false });
+
+                        if (!invFetchErr && Array.isArray(remoteInvoices) && remoteInvoices.length > 0) {
+                            const { data: remoteInvItems } = await supabaseClient
+                                .from('invoice_items')
+                                .select('id, invoice_id, product_id, category, unit, price, cost_price, qty, subtotal, discount_type, discount_value, discount_amount')
+                                .order('id', { ascending: true });
+
+                            const itemsByInvId = {};
+                            if (Array.isArray(remoteInvItems)) {
+                                remoteInvItems.forEach(item => {
+                                    const invId = Number(item.invoice_id);
+                                    if (!itemsByInvId[invId]) itemsByInvId[invId] = [];
+                                    const prod = (this.products || []).find(p => Number(p.id) === Number(item.product_id));
+                                    const q = Number(item.qty) || 0;
+                                    const p = Number(item.price) || 0;
+                                    const gross = q * p;
+                                    const discType = item.discount_type || 'none';
+                                    const discVal = Number(item.discount_value || 0);
+                                    const discAmt = Number(item.discount_amount || 0);
+                                    const net = Math.max(0, gross - discAmt);
+
+                                    itemsByInvId[invId].push({
+                                        id: Number(item.id),
+                                        productId: Number(item.product_id),
+                                        name: prod ? prod.name : 'Item Invoice',
+                                        category: item.category || 'General',
+                                        unit: item.unit || 'Unit',
+                                        price: p,
+                                        costPrice: Number(item.cost_price || 0),
+                                        qty: q,
+                                        discountType: discType,
+                                        discountValue: discVal,
+                                        discountAmount: discAmt,
+                                        grossSubtotal: gross,
+                                        subtotal: net
+                                    });
+                                });
+                            }
+
+                            this.invoiceList = remoteInvoices.map(row => {
+                                const invId = Number(row.id);
+                                const dateVal = this.normalizeSupabaseDate(row.invoice_date || row.created_at) || this.getLocalDateString();
+                                return {
+                                    id: invId,
+                                    supabaseId: invId,
+                                    invNo: row.inv_no,
+                                    customerName: row.customer_name,
+                                    customerFarm: row.customer_farm || '-',
+                                    dueDate: row.due_date || '30 Hari',
+                                    date: dateVal,
+                                    status: row.status || 'Belum Bayar',
+                                    subtotal: Number(row.subtotal || 0),
+                                    discountTotal: Number(row.discount_total || 0),
+                                    total: Number(row.total || 0),
+                                    paidAmount: Number(row.paid_amount || 0),
+                                    remaining: Number(row.remaining || 0),
+                                    quotationId: Number(row.quotation_id) || null,
+                                    projectId: Number(row.project_id) || null,
+                                    items: itemsByInvId[invId] || []
+                                };
+                            });
+                        }
+
+                        // RECEIVABLES FROM SUPABASE LIVE
+                        const { data: remoteReceivables, error: recFetchErr } = await supabaseClient
+                            .from('receivables')
+                            .select('id, inv_no, customer_name, due_date, status, total, paid, remaining, invoice_id, created_at')
+                            .order('id', { ascending: false });
+
+                        if (!recFetchErr && Array.isArray(remoteReceivables) && remoteReceivables.length > 0) {
+                            this.piutangList = remoteReceivables.map(row => ({
+                                id: Number(row.id),
+                                supabaseId: Number(row.id),
+                                invNo: row.inv_no,
+                                customerName: row.customer_name,
+                                dueDate: row.due_date || '30 Hari',
+                                status: row.status || 'Belum Bayar',
+                                total: Number(row.total || 0),
+                                paid: Number(row.paid || 0),
+                                remaining: Number(row.remaining || 0),
+                                invoiceId: Number(row.invoice_id) || null
+                            }));
                         }
 
                         // Keep a local backup/cache, but no longer treat it as the source of truth.
@@ -4800,7 +4945,7 @@
                     this.clearCart();
                 },
 
-                // QUOTATION LOGIC
+                // QUOTATION LOGIC WITH DISCOUNT SUPPORT
                 openAddQuotationModal() {
                     const todayStr = this.getLocalDateString();
                     this.editingQtId = null;
@@ -4831,11 +4976,15 @@
                         notes: qt.notes || '',
                         items: Array.isArray(qt.items) ? qt.items.map(i => ({
                             productId: i.productId || i.id,
+                            id: i.productId || i.id,
                             name: i.name,
                             category: i.category || 'General',
                             unit: i.unit || 'Unit',
                             qty: Number(i.qty) || 1,
-                            price: Number(i.price) || 0
+                            price: Number(i.price) || 0,
+                            discountType: i.discountType || i.discount_type || 'none',
+                            discountValue: Number(i.discountValue !== undefined ? i.discountValue : (i.discount_value !== undefined ? i.discount_value : 0)),
+                            discountAmount: Number(i.discountAmount !== undefined ? i.discountAmount : (i.discount_amount !== undefined ? i.discount_amount : 0))
                         })) : []
                     };
                     this.showAddQuotationModal = true;
@@ -4876,43 +5025,66 @@
                     if (!this.selectedQtProductId) return;
                     const prod = this.products.find(p => p.id == this.selectedQtProductId);
                     if (prod) {
-                        this.newQt.items.push({ productId: prod.id, name: prod.name, qty: 1, price: prod.price, category: prod.category || 'General', unit: prod.unit || 'Unit' });
+                        this.newQt.items.push({
+                            productId: prod.id,
+                            id: prod.id,
+                            name: prod.name,
+                            qty: 1,
+                            price: Number(prod.price) || 0,
+                            category: prod.category || 'General',
+                            unit: prod.unit || 'Unit',
+                            discountType: 'none',
+                            discountValue: 0,
+                            discountAmount: 0
+                        });
                     }
+                    this.selectedQtProductId = '';
+                },
+
+                getItemGrossSubtotal(item) {
+                    if (!item) return 0;
+                    const q = Math.max(0, Number(item.qty) || 0);
+                    const p = Math.max(0, Number(item.price) || 0);
+                    return Math.round(q * p * 100) / 100;
+                },
+
+                getItemDiscountAmount(item) {
+                    if (!item) return 0;
+                    const gross = this.getItemGrossSubtotal(item);
+                    if (!item.discountType || item.discountType === 'none') {
+                        return 0;
+                    }
+                    const val = Number(item.discountValue) || 0;
+                    if (item.discountType === 'percent') {
+                        const pct = Math.min(100, Math.max(0, val));
+                        return Math.round((gross * pct / 100) * 100) / 100;
+                    } else if (item.discountType === 'nominal') {
+                        const nom = Math.max(0, val);
+                        return Math.min(gross, Math.round(nom * 100) / 100);
+                    }
+                    return 0;
+                },
+
+                getItemNetSubtotal(item) {
+                    const gross = this.getItemGrossSubtotal(item);
+                    const disc = this.getItemDiscountAmount(item);
+                    return Math.max(0, Math.round((gross - disc) * 100) / 100);
+                },
+
+                calculateQtSubtotal() {
+                    if (!this.newQt || !Array.isArray(this.newQt.items)) return 0;
+                    return this.newQt.items.reduce((sum, item) => sum + this.getItemGrossSubtotal(item), 0);
+                },
+
+                calculateQtDiscountTotal() {
+                    if (!this.newQt || !Array.isArray(this.newQt.items)) return 0;
+                    return this.newQt.items.reduce((sum, item) => sum + this.getItemDiscountAmount(item), 0);
                 },
 
                 calculateQtTotal() {
-                    if (!this.newQt || !Array.isArray(this.newQt.items) || this.newQt.items.length === 0) {
-                        return 0;
-                    }
-
-                    const total = this.newQt.items.reduce((sum, item) => {
-                        const qty = Number(item.qty);
-                        const price = Number(item.price);
-
-                        if (!Number.isFinite(qty) || qty <= 0) {
-                            return sum;
-                        }
-
-                        if (!Number.isFinite(price) || price < 0) {
-                            return sum;
-                        }
-
-                        const itemSubtotal = qty * price;
-
-                        if (!Number.isFinite(itemSubtotal) || itemSubtotal < 0) {
-                            return sum;
-                        }
-
-                        const newTotal = sum + itemSubtotal;
-
-                        if (!Number.isFinite(newTotal) || newTotal < 0) {
-                            return sum;
-                        }
-
-                        return newTotal;
-                    }, 0);
-
-                    return Number.isFinite(total) && total >= 0 ? total : 0;
+                    const sub = this.calculateQtSubtotal();
+                    const disc = this.calculateQtDiscountTotal();
+                    return Math.max(0, Math.round((sub - disc) * 100) / 100);
                 },
 
                 async saveQuotation() {
@@ -4933,10 +5105,12 @@
                     }
 
                     const validatedItems = [];
-                    let computedTotal = 0;
+                    let computedSubtotal = 0;
+                    let computedDiscountTotal = 0;
+                    let computedNetTotal = 0;
 
                     for (let item of this.newQt.items) {
-                        const prod = this.products.find(p => p.id == item.productId);
+                        const prod = this.products.find(p => p.id == item.productId || p.id == item.id);
                         if (!prod) {
                             alert('Ada item penawaran yang sudah tidak tersedia. Silakan periksa kembali item.');
                             return;
@@ -4944,32 +5118,68 @@
 
                         const qty = Number(item.qty);
                         if (isNaN(qty) || !isFinite(qty) || qty <= 0) {
-                            alert('Jumlah item harus lebih dari 0.');
+                            alert(`Jumlah (qty) untuk item "${prod.name}" harus lebih dari 0.`);
                             return;
                         }
 
                         const price = Number(item.price);
                         if (isNaN(price) || !isFinite(price) || price < 0) {
-                            alert('Harga item tidak valid.');
+                            alert(`Harga untuk item "${prod.name}" tidak valid.`);
                             return;
                         }
 
-                        const itemSubtotal = qty * price;
-                        computedTotal += itemSubtotal;
+                        const grossSubtotal = Math.round((qty * price) * 100) / 100;
+                        
+                        let discType = item.discountType || 'none';
+                        let discVal = Number(item.discountValue) || 0;
+                        let discAmt = 0;
+
+                        if (discType === 'percent') {
+                            if (!Number.isFinite(discVal) || discVal < 0 || discVal > 100) {
+                                alert(`Diskon persentase untuk item "${prod.name}" harus antara 0% dan 100%.`);
+                                return;
+                            }
+                            discAmt = Math.round((grossSubtotal * discVal / 100) * 100) / 100;
+                        } else if (discType === 'nominal') {
+                            if (!Number.isFinite(discVal) || discVal < 0) {
+                                alert(`Diskon nominal untuk item "${prod.name}" tidak boleh negatif.`);
+                                return;
+                            }
+                            if (discVal > grossSubtotal) {
+                                alert(`Diskon nominal (${this.formatRupiah(discVal)}) untuk item "${prod.name}" tidak boleh melebihi subtotal kotor (${this.formatRupiah(grossSubtotal)}).`);
+                                return;
+                            }
+                            discAmt = Math.round(discVal * 100) / 100;
+                        } else {
+                            discType = 'none';
+                            discVal = 0;
+                            discAmt = 0;
+                        }
+
+                        const netSubtotal = Math.max(0, Math.round((grossSubtotal - discAmt) * 100) / 100);
+
+                        computedSubtotal += grossSubtotal;
+                        computedDiscountTotal += discAmt;
+                        computedNetTotal += netSubtotal;
 
                         validatedItems.push({
                             productId: prod.id,
+                            id: prod.id,
                             name: prod.name,
                             category: prod.category || item.category || 'General',
                             unit: prod.unit || item.unit || 'Unit',
                             qty: qty,
                             price: price,
-                            subtotal: itemSubtotal
+                            discountType: discType,
+                            discountValue: discVal,
+                            discountAmount: discAmt,
+                            grossSubtotal: grossSubtotal,
+                            subtotal: netSubtotal
                         });
                     }
 
-                    if (isNaN(computedTotal) || !isFinite(computedTotal) || computedTotal < 0) {
-                        alert('Harga item tidak valid.');
+                    if (isNaN(computedNetTotal) || !isFinite(computedNetTotal) || computedNetTotal < 0) {
+                        alert('Harga/total penawaran tidak valid.');
                         return;
                     }
 
@@ -4991,7 +5201,9 @@
                                 customer_name: customerName,
                                 project_id: Number.isSafeInteger(Number(this.newQt.projectId)) ? Number(this.newQt.projectId) : null,
                                 valid_until: validUntilStr,
-                                total: computedTotal
+                                subtotal: computedSubtotal,
+                                discount_total: computedDiscountTotal,
+                                total: computedNetTotal
                             };
 
                             const { error: qtUpdateErr } = await supabaseClient
@@ -5009,7 +5221,10 @@
                                 category: vi.category,
                                 unit: vi.unit,
                                 price: vi.price,
-                                qty: vi.qty
+                                qty: vi.qty,
+                                discount_type: vi.discountType || 'none',
+                                discount_value: vi.discountValue || 0,
+                                discount_amount: vi.discountAmount || 0
                             }));
 
                             const { error: itemsErr } = await supabaseClient
@@ -5024,7 +5239,9 @@
                             existingQt.validUntil = validUntilStr;
                             existingQt.notes = this.newQt.notes || '';
                             existingQt.items = validatedItems;
-                            existingQt.total = computedTotal;
+                            existingQt.subtotal = computedSubtotal;
+                            existingQt.discountTotal = computedDiscountTotal;
+                            existingQt.total = computedNetTotal;
                         } catch (err) {
                             console.error('Update quotation error:', err);
                             alert('Gagal memperbarui penawaran di database: ' + (err.message || err));
@@ -5049,7 +5266,9 @@
                             project_id: Number.isSafeInteger(Number(this.newQt.projectId)) ? Number(this.newQt.projectId) : null,
                             valid_until: validUntilStr,
                             status: 'Draft',
-                            total: computedTotal,
+                            subtotal: computedSubtotal,
+                            discount_total: computedDiscountTotal,
+                            total: computedNetTotal,
                             created_by: this.currentUser.id
                         };
 
@@ -5069,7 +5288,10 @@
                             category: vi.category,
                             unit: vi.unit,
                             price: vi.price,
-                            qty: vi.qty
+                            qty: vi.qty,
+                            discount_type: vi.discountType || 'none',
+                            discount_value: vi.discountValue || 0,
+                            discount_amount: vi.discountAmount || 0
                         }));
 
                         const { error: itemsErr } = await supabaseClient
@@ -5099,7 +5321,9 @@
                         projectName: this.newQt.projectName || 'Proyek Closed House',
                         notes: this.newQt.notes || '',
                         items: validatedItems,
-                        total: computedTotal,
+                        subtotal: computedSubtotal,
+                        discountTotal: computedDiscountTotal,
+                        total: computedNetTotal,
                         status: 'Draft'
                     });
 
@@ -5142,7 +5366,9 @@
                         return;
                     }
 
-                    let computedTotal = 0;
+                    let computedGrossTotal = 0;
+                    let computedDiscountTotal = 0;
+                    let computedNetTotal = 0;
                     const validatedItems = [];
 
                     for (let item of qt.items) {
@@ -5170,17 +5396,27 @@
                             return;
                         }
 
-                        const subtotal = qty * price;
-                        if (!Number.isFinite(subtotal) || subtotal < 0) {
-                            alert(`Perhitungan subtotal untuk item "${prod.name}" tidak valid. Konversi dibatalkan.`);
-                            return;
+                        const grossSubtotal = Math.round((qty * price) * 100) / 100;
+
+                        let discType = item.discountType || item.discount_type || 'none';
+                        let discVal = Number(item.discountValue !== undefined ? item.discountValue : (item.discount_value !== undefined ? item.discount_value : 0));
+                        let discAmt = Number(item.discountAmount !== undefined ? item.discountAmount : (item.discount_amount !== undefined ? item.discount_amount : 0));
+
+                        if (discType === 'percent') {
+                            discAmt = Math.round((grossSubtotal * Math.min(100, Math.max(0, discVal)) / 100) * 100) / 100;
+                        } else if (discType === 'nominal') {
+                            discAmt = Math.min(grossSubtotal, Math.max(0, Math.round(discVal * 100) / 100));
+                        } else {
+                            discType = 'none';
+                            discVal = 0;
+                            discAmt = 0;
                         }
 
-                        computedTotal += subtotal;
-                        if (!Number.isFinite(computedTotal) || computedTotal < 0) {
-                            alert(`Perhitungan total nilai penawaran tidak valid. Konversi dibatalkan.`);
-                            return;
-                        }
+                        const netSubtotal = Math.max(0, Math.round((grossSubtotal - discAmt) * 100) / 100);
+
+                        computedGrossTotal += grossSubtotal;
+                        computedDiscountTotal += discAmt;
+                        computedNetTotal += netSubtotal;
 
                         validatedItems.push({
                             productId: prod.id,
@@ -5190,11 +5426,16 @@
                             type: prod.type || item.type || 'barang',
                             qty: qty,
                             price: price,
-                            unit: prod.unit || item.unit || 'Unit'
+                            unit: prod.unit || item.unit || 'Unit',
+                            discountType: discType,
+                            discountValue: discVal,
+                            discountAmount: discAmt,
+                            grossSubtotal: grossSubtotal,
+                            subtotal: netSubtotal
                         });
                     }
 
-                    // Validasi qt.total jika tersedia
+                    // Validasi qt.total jika tersedia (diberikan toleransi jika ada diskon)
                     if (qt.total !== undefined && qt.total !== null) {
                         const qtTotalNum = Number(qt.total);
                         if (!Number.isFinite(qtTotalNum) || qtTotalNum < 0) {
@@ -5202,8 +5443,8 @@
                             return;
                         }
 
-                        if (Math.abs(qtTotalNum - computedTotal) > 0.01) {
-                            alert(`Data penawaran ${qt.qtNo || ''} tidak konsisten antara total nota (${this.formatRupiah(qtTotalNum)}) dan Rincian Item (${this.formatRupiah(computedTotal)}). Konversi dibatalkan.`);
+                        if (Math.abs(qtTotalNum - computedNetTotal) > 0.05) {
+                            alert(`Data penawaran ${qt.qtNo || ''} tidak konsisten antara total nota (${this.formatRupiah(qtTotalNum)}) dan Rincian Item Net (${this.formatRupiah(computedNetTotal)}). Konversi dibatalkan.`);
                             return;
                         }
                     }
@@ -5261,9 +5502,11 @@
                             due_date: '30 Hari',
                             invoice_date: dateStr,
                             status: 'Belum Bayar',
-                            total: computedTotal,
+                            subtotal: computedGrossTotal,
+                            discount_total: computedDiscountTotal,
+                            total: computedNetTotal,
                             paid_amount: 0,
-                            remaining: computedTotal,
+                            remaining: computedNetTotal,
                             project_id: projectIdNum,
                             quotation_id: qtIdNum,
                             transaction_id: null,
@@ -5292,6 +5535,7 @@
                     }
 
                     // 7. PERSIST INVOICE ITEMS TO SUPABASE LIVE (public.invoice_items)
+                    // FIX PERMANEN BUG: JANGAN KIRIM subtotal KARENA subtotal GENERATED ALWAYS AS (qty * price) STORED DI SUPABASE
                     try {
                         const itemsPayload = validatedItems.map(item => {
                             const prod = this.products.find(p => p.id == item.productId);
@@ -5304,7 +5548,9 @@
                                 price: item.price,
                                 cost_price: costPrice,
                                 qty: item.qty,
-                                subtotal: item.qty * item.price
+                                discount_type: item.discountType || 'none',
+                                discount_value: item.discountValue || 0,
+                                discount_amount: item.discountAmount || 0
                             };
                         });
 
@@ -5328,9 +5574,9 @@
                             customer_name: qt.customerName || 'Pelanggan',
                             due_date: '30 Hari',
                             status: 'Belum Bayar',
-                            total: computedTotal,
+                            total: computedNetTotal,
                             paid: 0,
-                            remaining: computedTotal,
+                            remaining: computedNetTotal,
                             invoice_id: insertedInvId
                         };
 
@@ -5368,25 +5614,25 @@
                         return;
                     }
 
-                    let barangSubtotal = 0;
-                    let jasaSubtotal = 0;
+                    let barangNetSubtotal = 0;
+                    let jasaNetSubtotal = 0;
 
                     for (let item of validatedItems) {
-                        const sub = item.qty * item.price;
+                        const netSub = item.subtotal;
                         if (item.type === 'jasa') {
-                            jasaSubtotal += sub;
+                            jasaNetSubtotal += netSub;
                         } else {
-                            barangSubtotal += sub;
+                            barangNetSubtotal += netSub;
                         }
                     }
 
-                    if (barangSubtotal > 0 && (!salesCoa || !salesCoa.id)) {
+                    if (barangNetSubtotal > 0 && (!salesCoa || !salesCoa.id)) {
                         await this.rollbackInvoiceConversion(insertedInvId);
                         alert('Bagan akun Pendapatan Penjualan Barang (4-1110) tidak ditemukan di database. Konversi invoice dibatalkan.');
                         return;
                     }
 
-                    if (jasaSubtotal > 0 && (!serviceCoa || !serviceCoa.id)) {
+                    if (jasaNetSubtotal > 0 && (!serviceCoa || !serviceCoa.id)) {
                         await this.rollbackInvoiceConversion(insertedInvId);
                         alert('Bagan akun Pendapatan Jasa & Instalasi (4-1120) tidak ditemukan di database. Konversi invoice dibatalkan.');
                         return;
@@ -5395,26 +5641,26 @@
                     const journalLines = [
                         {
                             chart_of_account_id: Number(piutangCoa.id),
-                            debit: computedTotal,
+                            debit: computedNetTotal,
                             credit: 0,
                             description: `Piutang Usaha ${invNo} (${qt.customerName || 'Pelanggan'})`
                         }
                     ];
 
-                    if (barangSubtotal > 0) {
+                    if (barangNetSubtotal > 0) {
                         journalLines.push({
                             chart_of_account_id: Number(salesCoa.id),
                             debit: 0,
-                            credit: barangSubtotal,
+                            credit: barangNetSubtotal,
                             description: `Penjualan Barang ${invNo}`
                         });
                     }
 
-                    if (jasaSubtotal > 0) {
+                    if (jasaNetSubtotal > 0) {
                         journalLines.push({
                             chart_of_account_id: Number(serviceCoa.id),
                             debit: 0,
-                            credit: jasaSubtotal,
+                            credit: jasaNetSubtotal,
                             description: `Pendapatan Jasa ${invNo}`
                         });
                     }
@@ -5466,9 +5712,11 @@
                         customerName: qt.customerName || 'Pelanggan',
                         customerFarm: qt.projectName || '-',
                         items: validatedItems,
-                        total: computedTotal,
+                        subtotal: computedGrossTotal,
+                        discountTotal: computedDiscountTotal,
+                        total: computedNetTotal,
                         paidAmount: 0,
-                        remaining: computedTotal,
+                        remaining: computedNetTotal,
                         status: 'Belum Bayar'
                     };
 
@@ -5482,9 +5730,9 @@
                             customerName: inv.customerName,
                             customerFarm: inv.customerFarm,
                             dueDate: '30 Hari',
-                            total: computedTotal,
+                            total: computedNetTotal,
                             paid: 0,
-                            remaining: computedTotal
+                            remaining: computedNetTotal
                         });
                     }
 
@@ -7279,49 +7527,130 @@
                     const statusStr = qt.status || 'Draft';
 
                     let items = Array.isArray(qt.items) ? qt.items : [];
-                    let computedTotal = 0;
-                    items.forEach(it => {
-                        const q = Number(it.qty) || 0;
-                        const p = Number(it.price) || 0;
-                        computedTotal += (q * p);
+                    let computedGrossTotal = 0;
+                    let computedDiscountTotal = 0;
+                    let computedNetTotal = 0;
+
+                    let hasAnyDiscount = false;
+
+                    const processedItems = items.map((it) => {
+                        const qty = Number(it.qty) || 1;
+                        const price = Number(it.price) || 0;
+                        const gross = Math.round(qty * price * 100) / 100;
+                        let discType = it.discountType || it.discount_type || 'none';
+                        let discVal = Number(it.discountValue !== undefined ? it.discountValue : (it.discount_value !== undefined ? it.discount_value : 0));
+                        let discAmt = Number(it.discountAmount !== undefined ? it.discountAmount : (it.discount_amount !== undefined ? it.discount_amount : 0));
+
+                        if (discType === 'percent') {
+                            discAmt = Math.round((gross * Math.min(100, Math.max(0, discVal)) / 100) * 100) / 100;
+                        } else if (discType === 'nominal') {
+                            discAmt = Math.min(gross, Math.max(0, Math.round(discVal * 100) / 100));
+                        } else {
+                            discType = 'none';
+                            discVal = 0;
+                            discAmt = 0;
+                        }
+
+                        if (discAmt > 0) hasAnyDiscount = true;
+
+                        const net = Math.max(0, Math.round((gross - discAmt) * 100) / 100);
+
+                        computedGrossTotal += gross;
+                        computedDiscountTotal += discAmt;
+                        computedNetTotal += net;
+
+                        return {
+                            ...it,
+                            qty,
+                            price,
+                            gross,
+                            discType,
+                            discVal,
+                            discAmt,
+                            net
+                        };
                     });
 
                     const grandTotal = (qt.total !== undefined && qt.total !== null && Number(qt.total) > 0)
                         ? Number(qt.total)
-                        : computedTotal;
+                        : computedNetTotal;
 
                     let rowsHtml = '';
-                    if (items.length === 0) {
+                    if (processedItems.length === 0) {
                         rowsHtml = `
                             <tr>
-                                <td colspan="6" style="text-align: center; padding: 28px 16px; color: #94a3b8; font-style: italic;">
+                                <td colspan="${hasAnyDiscount ? 8 : 6}" style="text-align: center; padding: 28px 16px; color: #94a3b8; font-style: italic;">
                                     Tidak ada rincian item produk/jasa pada penawaran ini.
                                 </td>
                             </tr>
                         `;
                     } else {
-                        rowsHtml = items.map((it, idx) => {
+                        rowsHtml = processedItems.map((it, idx) => {
                             const name = it.name || it.productName || 'Item Peralatan / Jasa';
-                            const qty = Number(it.qty) || 1;
-                            const unit = it.unit || 'Unit';
-                            const price = Number(it.price) || 0;
-                            const itemTotal = qty * price;
                             const category = it.category ? `<div style="font-size: 9.5px; color: #64748b; font-weight: normal; margin-top: 1px;">Kategori: ${escapeHtml(it.category)}</div>` : '';
+                            const discLabel = it.discAmt > 0
+                                ? (it.discType === 'percent' ? `${it.discVal}% (-${formatRp(it.discAmt)})` : `-${formatRp(it.discAmt)}`)
+                                : '-';
 
-                            return `
-                                <tr>
-                                    <td class="col-no">${idx + 1}</td>
-                                    <td class="col-desc">
-                                        <div style="font-weight: 600; color: #0f172a;">${escapeHtml(name)}</div>
-                                        ${category}
-                                    </td>
-                                    <td class="col-qty">${qty}</td>
-                                    <td class="col-unit">${escapeHtml(unit)}</td>
-                                    <td class="col-price">${formatRp(price)}</td>
-                                    <td class="col-total">${formatRp(itemTotal)}</td>
-                                </tr>
-                            `;
+                            if (hasAnyDiscount) {
+                                return `
+                                    <tr>
+                                        <td class="col-no">${idx + 1}</td>
+                                        <td class="col-desc">
+                                            <div style="font-weight: 600; color: #0f172a;">${escapeHtml(name)}</div>
+                                            ${category}
+                                        </td>
+                                        <td class="col-qty">${it.qty}</td>
+                                        <td class="col-unit">${escapeHtml(it.unit || 'Unit')}</td>
+                                        <td class="col-price">${formatRp(it.price)}</td>
+                                        <td class="col-total">${formatRp(it.gross)}</td>
+                                        <td style="text-align: center; color: #059669; font-weight: 600;">${discLabel}</td>
+                                        <td class="col-total" style="color: #0284c7;">${formatRp(it.net)}</td>
+                                    </tr>
+                                `;
+                            } else {
+                                return `
+                                    <tr>
+                                        <td class="col-no">${idx + 1}</td>
+                                        <td class="col-desc">
+                                            <div style="font-weight: 600; color: #0f172a;">${escapeHtml(name)}</div>
+                                            ${category}
+                                        </td>
+                                        <td class="col-qty">${it.qty}</td>
+                                        <td class="col-unit">${escapeHtml(it.unit || 'Unit')}</td>
+                                        <td class="col-price">${formatRp(it.price)}</td>
+                                        <td class="col-total">${formatRp(it.net)}</td>
+                                    </tr>
+                                `;
+                            }
                         }).join('');
+                    }
+
+                    let summaryHtml = '';
+                    if (hasAnyDiscount || computedDiscountTotal > 0) {
+                        summaryHtml = `
+                            <div class="summary-box" style="display: block; background: #0f172a; color: #ffffff; padding: 12px 16px; border-radius: 8px; margin-top: 16px;">
+                                <div style="display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; margin-bottom: 4px;">
+                                    <span>Subtotal Kotor:</span>
+                                    <span>${formatRp(computedGrossTotal)}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; font-size: 11px; color: #34d399; margin-bottom: 6px;">
+                                    <span>Total Diskon Penawaran:</span>
+                                    <span>- ${formatRp(computedDiscountTotal)}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; font-size: 14px; font-weight: 800; border-top: 1px solid #334155; padding-top: 6px;">
+                                    <span>GRAND TOTAL PENAWARAN:</span>
+                                    <span style="color: #38bdf8;">${formatRp(grandTotal)}</span>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        summaryHtml = `
+                            <div class="summary-box">
+                                <div class="summary-title">TOTAL NILAI PENAWARAN HARGA</div>
+                                <div class="summary-total">${formatRp(grandTotal)}</div>
+                            </div>
+                        `;
                     }
 
                     return `<!DOCTYPE html>
@@ -7397,7 +7726,7 @@
                         <div class="brand-sub">Peralatan & Instalasi Closed House</div>
                         <div class="brand-meta">
                             <div>${escapeHtml(this.businessAddress || 'Purwokerto, Indonesia')}</div>
-                            <div>Telp / WA: ${escapeHtml(this.businessPhone || '+62 821-3878-5510')}</div>
+                            <div>Telp / WA: ${escapeHtml(this.businessPhone || '+62 821-3878-5510')} (DYMAS DANANG)</div>
                         </div>
                     </div>
                     <div style="text-align: right;">
@@ -7430,7 +7759,7 @@
                             <th class="col-qty">Qty</th>
                             <th class="col-unit">Satuan</th>
                             <th class="col-price">Harga Satuan</th>
-                            <th class="col-total">Subtotal</th>
+                            ${hasAnyDiscount ? '<th class="col-total">Subtotal Kotor</th><th style="text-align: center;">Diskon</th><th class="col-total">Subtotal Net</th>' : '<th class="col-total">Subtotal</th>'}
                         </tr>
                     </thead>
                     <tbody>
@@ -7438,10 +7767,7 @@
                     </tbody>
                 </table>
 
-                <div class="summary-box">
-                    <div class="summary-title">TOTAL NILAI PENAWARAN HARGA</div>
-                    <div class="summary-total">${formatRp(grandTotal)}</div>
-                </div>
+                ${summaryHtml}
 
                 <div class="notes-box">
                     <strong>Catatan & Ketentuan Penawaran:</strong><br>
@@ -7452,7 +7778,7 @@
             <div class="sign-grid">
                 <div class="sign-col">
                     <div class="sign-role">Pemberi Penawaran (AGRA JAYA)</div>
-                    <div class="sign-name">${escapeHtml(this.ownerName || 'Dymas Danang')}</div>
+                    <div class="sign-name">DYMAS DANANG</div>
                 </div>
                 <div class="sign-col">
                     <div class="sign-role">Persetujuan Mitra / Pelanggan (DEAL)</div>
@@ -7544,18 +7870,34 @@
                         }
                     }
 
-                    // Hitung total dan subtotal
-                    let computedSubtotal = 0;
+                    // Hitung total, subtotal kotor, dan diskon
+                    let computedGrossTotal = 0;
+                    let computedDiscountTotal = 0;
                     items.forEach(it => {
                         const q = Number(it.qty) || 0;
                         const p = Number(it.price) || 0;
-                        computedSubtotal += (q * p);
+                        const gross = Math.round(q * p * 100) / 100;
+                        let discAmt = Number(it.discountAmount !== undefined ? it.discountAmount : (it.discount_amount !== undefined ? it.discount_amount : 0));
+                        if (discAmt <= 0 && (it.discountType || it.discount_type)) {
+                            const discType = it.discountType || it.discount_type;
+                            const discVal = Number(it.discountValue || it.discount_value || 0);
+                            if (discType === 'percent') discAmt = Math.round((gross * discVal / 100) * 100) / 100;
+                            else if (discType === 'nominal') discAmt = Math.min(gross, discVal);
+                        }
+                        computedGrossTotal += gross;
+                        computedDiscountTotal += discAmt;
                     });
+
+                    if (inv.discountTotal !== undefined && inv.discountTotal !== null && Number(inv.discountTotal) > 0) {
+                        computedDiscountTotal = Number(inv.discountTotal);
+                    }
 
                     const grandTotal = (inv.total !== undefined && inv.total !== null && Number(inv.total) > 0)
                         ? Number(inv.total)
-                        : (computedSubtotal > 0 ? computedSubtotal : 0);
-                    const subtotal = computedSubtotal > 0 ? computedSubtotal : grandTotal;
+                        : Math.max(0, computedGrossTotal - computedDiscountTotal);
+                    const subtotalKotor = (inv.subtotal !== undefined && inv.subtotal !== null && Number(inv.subtotal) > 0)
+                        ? Number(inv.subtotal)
+                        : (computedGrossTotal > 0 ? computedGrossTotal : grandTotal);
                     const paidAmount = Number(inv.paidAmount || inv.paid || 0);
                     const remaining = (inv.remaining !== undefined && inv.remaining !== null)
                         ? Number(inv.remaining)
@@ -8048,9 +8390,13 @@
                         <div style="margin-top:6px; color:#64748b; font-size:9.5px;">Konfirmasi pembayaran: <strong>${escapeHtml(this.businessPhone || '+62 821-3878-5510')}</strong></div>
                     </div>
                     <div class="summary-box">
-                        <div class="summary-row">
-                            <span style="color:#64748b;">Subtotal:</span>
-                            <span style="font-weight:600;">${formatRp(subtotal)}</span>
+                        <div class="summary-row" style="${computedDiscountTotal > 0 ? '' : 'display:none;'}">
+                            <span style="color:#64748b;">Subtotal Kotor:</span>
+                            <span style="font-weight:600;">${formatRp(subtotalKotor)}</span>
+                        </div>
+                        <div class="summary-row" style="${computedDiscountTotal > 0 ? '' : 'display:none;'} color:#059669;">
+                            <span>Total Diskon:</span>
+                            <span style="font-weight:600;">- ${formatRp(computedDiscountTotal)}</span>
                         </div>
                         <div class="summary-row total-row">
                             <span>TOTAL:</span>
