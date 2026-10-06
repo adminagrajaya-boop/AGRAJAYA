@@ -2629,20 +2629,27 @@
 
                 <div>
                     <label class="block text-xs font-bold text-slate-700 mb-1.5">Tipe Transaksi Invoice</label>
-                    <div class="grid grid-cols-2 gap-2">
+                    <div class="grid grid-cols-3 gap-2">
                         <button @click="convertPaymentMethod = 'Tunai'"
                             :class="convertPaymentMethod === 'Tunai' ? 'border-emerald-600 bg-emerald-50 text-emerald-800 font-bold' : 'border-slate-200 text-slate-600'"
-                            class="py-2.5 border rounded-xl text-xs transition-all flex flex-col items-center gap-1">
+                            class="py-2.5 border rounded-xl text-xs transition-all flex flex-col items-center gap-1 text-center h-full">
                             <i class="fa-solid fa-circle-check text-sm text-emerald-600"></i>
                             <span>Cash / Lunas</span>
-                            <span class="text-[9px] font-normal text-slate-500">Penjualan Direct / Cash</span>
+                            <span class="text-[9px] font-normal text-slate-500 leading-tight px-1">Penjualan Direct / Sudah Dibayar</span>
+                        </button>
+                        <button @click="convertPaymentMethod = 'TunaiBelumLunas'"
+                            :class="convertPaymentMethod === 'TunaiBelumLunas' ? 'border-sky-600 bg-sky-50 text-sky-800 font-bold' : 'border-slate-200 text-slate-600'"
+                            class="py-2.5 border rounded-xl text-xs transition-all flex flex-col items-center gap-1 text-center h-full">
+                            <i class="fa-solid fa-hand-holding-dollar text-sm text-sky-600"></i>
+                            <span>Cash / Belum Lunas</span>
+                            <span class="text-[9px] font-normal text-slate-500 leading-tight px-1">Penjualan Cash (Belum Bayar)</span>
                         </button>
                         <button @click="convertPaymentMethod = 'Kredit'"
                             :class="convertPaymentMethod === 'Kredit' ? 'border-amber-600 bg-amber-50 text-amber-800 font-bold' : 'border-slate-200 text-slate-600'"
-                            class="py-2.5 border rounded-xl text-xs transition-all flex flex-col items-center gap-1">
+                            class="py-2.5 border rounded-xl text-xs transition-all flex flex-col items-center gap-1 text-center h-full">
                             <i class="fa-solid fa-clock text-sm text-amber-600"></i>
                             <span>Tempo / Kredit</span>
-                            <span class="text-[9px] font-normal text-slate-500">Penjualan Piutang</span>
+                            <span class="text-[9px] font-normal text-slate-500 leading-tight px-1">Penjualan Piutang</span>
                         </button>
                     </div>
                 </div>
@@ -2655,13 +2662,22 @@
                         <template
                             x-for="acc in (accountingPaymentAccounts || []).filter(a => a.type === 'CASH' || a.type === 'BANK' || a.type === 'GATEWAY' || (a.chart_of_accounts && (a.chart_of_accounts.type === 'Kas' || a.chart_of_accounts.type === 'Bank' || a.chart_of_accounts.type === 'Kas/Bank')))"
                             :key="acc.id">
-                            <option :value="acc.id" x-text="acc.name + (acc.chart_of_accounts ? ' (' + acc.chart_of_accounts.code + ')' : '')"></option>
+                            <option :value="acc.id"
+                                x-text="acc.name + (acc.chart_of_accounts ? ' (' + acc.chart_of_accounts.code + ')' : '')">
+                            </option>
                         </template>
                     </select>
                     <div
                         class="text-[11px] text-emerald-700 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200/80">
                         <i class="fa-solid fa-info-circle mr-1"></i> Invoice diterbitkan berstatus
                         <strong>LUNAS</strong>. Tanpa jatuh tempo 30 hari & tanpa piutang.
+                    </div>
+                </div>
+
+                <!-- Input Opsi Cash / Belum Lunas -->
+                <div x-show="convertPaymentMethod === 'TunaiBelumLunas'" class="space-y-2">
+                    <div class="text-[11px] text-sky-800 bg-sky-50 p-2.5 rounded-xl border border-sky-200/80">
+                        <i class="fa-solid fa-info-circle mr-1"></i> Invoice diterbitkan <strong>BELUM LUNAS</strong>. Pembayaran belum diterima, namun dicatat sebagai transaksi Cash.
                     </div>
                 </div>
 
@@ -5714,13 +5730,15 @@
                         }
                     }
 
-                    // Options logic (Cash vs Credit)
-                    const isCash = options.paymentMethod === 'Tunai';
-                    const dueDateVal = isCash ? '-' : (options.dueDate && options.dueDate.trim() ? options.dueDate.trim() : null);
-                    const dpAmt = isCash ? computedNetTotal : Math.max(0, Number(options.dpAmount || 0));
-                    const paidAmtVal = isCash ? computedNetTotal : Math.min(computedNetTotal, dpAmt);
+                    // Options logic (Cash vs Credit vs Cash Belum Lunas)
+                    const isTunaiLunas = options.paymentMethod === 'Tunai';
+                    const isTunaiBelumLunas = options.paymentMethod === 'TunaiBelumLunas';
+                    
+                    const dueDateVal = isTunaiLunas ? '-' : (isTunaiBelumLunas ? null : (options.dueDate && options.dueDate.trim() ? options.dueDate.trim() : null));
+                    const dpAmt = isTunaiLunas ? computedNetTotal : (isTunaiBelumLunas ? 0 : Math.max(0, Number(options.dpAmount || 0)));
+                    const paidAmtVal = isTunaiLunas ? computedNetTotal : Math.min(computedNetTotal, dpAmt);
                     const remainingVal = Math.max(0, computedNetTotal - paidAmtVal);
-                    const statusVal = isCash ? 'Lunas' : (paidAmtVal > 0 ? 'Sebagian' : 'Belum Bayar');
+                    const statusVal = isTunaiLunas ? 'Lunas' : (paidAmtVal > 0 ? 'Sebagian' : 'Belum Bayar');
 
                     const invNo = this.generateCode('INV', this.invoiceList, 'invCounter');
                     const dateStr = this.getLocalDateString();
@@ -5839,9 +5857,9 @@
                         return;
                     }
 
-                    // 8. PERSIST RECEIVABLE TO SUPABASE LIVE (public.receivables) ONLY IF KREDIT & REMAINING > 0
+                    // 8. PERSIST RECEIVABLE TO SUPABASE LIVE (public.receivables) ONLY IF NOT LUNAS & REMAINING > 0
                     let insertedRecId = null;
-                    if (!isCash && remainingVal > 0) {
+                    if (!isTunaiLunas && remainingVal > 0) {
                         try {
                             const recPayload = {
                                 inv_no: invNo,
@@ -5900,7 +5918,7 @@
                     }
 
                     const journalLines = [];
-                    if (isCash) {
+                    if (isTunaiLunas) {
                         if (paymentCoaId) {
                             journalLines.push({
                                 chart_of_account_id: paymentCoaId,
@@ -5973,7 +5991,7 @@
                                 p_source_type: 'INVOICE',
                                 p_source_id: insertedInvId,
                                 p_source_code: invNo,
-                                p_description: `Jurnal Penjualan Invoice ${invNo} - ${qt.customerName || 'Pelanggan'} (${isCash ? 'LUNAS/CASH' : 'KREDIT'})`,
+                                p_description: `Jurnal Penjualan Invoice ${invNo} - ${qt.customerName || 'Pelanggan'} (${isTunaiLunas ? 'LUNAS/CASH' : (isTunaiBelumLunas ? 'CASH (BELUM LUNAS)' : 'KREDIT')})`,
                                 p_user_id: this.currentUser.id,
                                 p_lines: journalLines
                             });
@@ -6051,7 +6069,7 @@
                     }
 
                     this.saveDataToStorage();
-                    alert(`Penawaran ${qt.qtNo} berhasil dikonversi menjadi Invoice (${isCash ? 'LUNAS / CASH' : 'KREDIT'}): ${invNo}`);
+                    alert(`Penawaran ${qt.qtNo} berhasil dikonversi menjadi Invoice (${isTunaiLunas ? 'LUNAS / CASH' : (isTunaiBelumLunas ? 'CASH (BELUM LUNAS)' : 'KREDIT')}): ${invNo}`);
                     this.currentTab = 'invoice';
                 },
 
@@ -8491,9 +8509,11 @@
             gap: 12px;
         }
         .brand-logo {
-            height: 48px;
+            height: 56px;
+            max-width: 140px;
             width: auto;
             object-fit: contain;
+            border-radius: 4px;
         }
         .brand-title {
             font-size: 22px;
@@ -8768,7 +8788,7 @@
                 <!-- Header -->
                 <div class="inv-header">
                     <div class="brand-col">
-                        <img src="https://cdn.phototourl.com/free/2026-09-10-cec08f9a-d16a-4792-8356-5844cf2af205.jpg" alt="Logo Agra Jaya" class="brand-logo" onerror="this.style.display='none'">
+                        <img src="https://cdn.phototourl.com/member/2026-10-06-864d4719-b2cf-4e87-bdca-3bf13edc3004.jpg" alt="Logo Agra Jaya" class="brand-logo" onerror="this.style.display='none'">
                         <div>
                             <div class="brand-title">AGRA JAYA</div>
                             <div class="brand-sub">Peralatan & Instalasi Closed House</div>
@@ -8840,14 +8860,23 @@
                         <div style="font-weight:700; color:#0f172a; margin-bottom:4px;"><i class="fa-solid fa-circle-info" style="color:#0284c7; margin-right:4px;"></i>Catatan & Ketentuan Pembayaran:</div>
                         <div>${noteText}</div>
                         <div style="margin-top:6px; color:#64748b; font-size:9.5px;">Konfirmasi pembayaran: <strong>${escapeHtml(this.businessPhone || '+62 821-3878-5510')}</strong></div>
-                        <div style="margin-top: 12px; font-weight:700; color:#0f172a;"><i class="fa-solid fa-building-columns" style="color:#0284c7; margin-right:4px;"></i>Rekening Pembayaran:</div>
-                        <div style="margin-top: 4px; font-size: 10px; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px;">
-                            <div style="font-weight:600;">BCA</div>
-                            <div>: 0970826793<br>&nbsp; a.n. Dymas Danang</div>
-                            <div style="font-weight:600;">BRI</div>
-                            <div>: 682501017331539<br>&nbsp; a.n. Dimas Danang</div>
-                            <div style="font-weight:600;">Bank Mandiri</div>
-                            <div>: 1390016249918<br>&nbsp; a.n. DIMAS DANANG PRIYOSE</div>
+                        <div style="margin-top: 14px; font-weight:700; color:#0f172a;"><i class="fa-solid fa-building-columns" style="color:#0284c7; margin-right:4px;"></i>REKENING PEMBAYARAN:</div>
+                        <div style="margin-top: 6px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+                            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; font-size: 9.5px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                                <div style="font-weight: 800; color: #0f172a; margin-bottom: 2px;">BCA</div>
+                                <div style="font-weight: 800; color: #0284c7; font-size: 11.5px; margin-bottom: 2px;">0970826793</div>
+                                <div style="color: #64748b; font-weight: 500;">a.n. Dymas Danang</div>
+                            </div>
+                            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; font-size: 9.5px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                                <div style="font-weight: 800; color: #0f172a; margin-bottom: 2px;">BRI</div>
+                                <div style="font-weight: 800; color: #0284c7; font-size: 11.5px; margin-bottom: 2px;">682501017331539</div>
+                                <div style="color: #64748b; font-weight: 500;">a.n. Dimas Danang</div>
+                            </div>
+                            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; font-size: 9.5px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                                <div style="font-weight: 800; color: #0f172a; margin-bottom: 2px;">Bank Mandiri</div>
+                                <div style="font-weight: 800; color: #0284c7; font-size: 11.5px; margin-bottom: 2px;">1390016249918</div>
+                                <div style="color: #64748b; font-weight: 500; font-size: 9px;">a.n. DIMAS DANANG PRIYOSE</div>
+                            </div>
                         </div>
                     </div>
                     <div class="summary-box">
