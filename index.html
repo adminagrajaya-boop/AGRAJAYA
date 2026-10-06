@@ -833,7 +833,7 @@
                                                     <span>Tandai Cash</span>
                                                 </button>
                                                 <button x-show="inv.status !== 'Void' && inv.status !== 'Dibatalkan'"
-                                                    @click="correctInvoice(inv)"
+                                                    @click.stop="correctInvoice(inv)"
                                                     class="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-300 font-bold text-[10px] rounded-lg transition-all"
                                                     title="Koreksi / Revisi Invoice (Void lama & buat invoice baru)">
                                                     <i class="fa-solid fa-pen-to-square mr-1"></i>
@@ -5155,69 +5155,88 @@
 
 
                 async correctInvoice(inv) {
-                    if (!inv) return;
-                    if (!this.currentUser || !this.currentUser.role) {
-                        alert('Akses Ditolak: Role pengguna belum tersedia. Silakan muat ulang halaman.');
-                        return;
-                    }
-                    const userRole = (this.currentUser.role || '').toLowerCase().trim();
-                    if (userRole !== 'owner' && userRole !== 'admin') {
-                        alert('Akses Ditolak: Fitur koreksi invoice hanya untuk Owner / Admin.');
-                        return;
-                    }
-                    if (inv.status === 'Void' || inv.status === 'Dibatalkan') {
-                        alert(`Invoice ${inv.invNo} sudah berstatus Void/Dibatalkan.`);
-                        return;
-                    }
-
-                    const payments = this.paymentHistoryList.filter(p => p.invNo === inv.invNo && p.status !== 'VOID');
-                    if (payments && payments.length > 0) {
-                        alert(`DITOLAK: Invoice ${inv.invNo} memiliki riwayat pembayaran. Batalkan pembayaran terlebih dahulu.`);
-                        return;
-                    }
-
-                    if (!confirm(`Mulai proses Koreksi untuk Invoice ${inv.invNo}?\n\nInvoice lama akan di-VOID dan invoice baru akan diterbitkan dengan nomor revisi.`)) return;
-
-                    this.isCorrectInvoiceMode = true;
-                    this.correctingInvoiceObj = inv;
-                    this.correctInvoiceReason = 'Revisi Kesalahan Input Nominal/Detail';
-
+                    console.log('CORRECTION CLICKED', inv?.invNo || inv);
                     try {
-                        const { data: invItems, error: itemsErr } = await supabaseClient
-                            .from('invoice_items')
-                            .select('*')
-                            .eq('invoice_id', inv.id || inv.supabaseId);
-                        if (itemsErr) throw itemsErr;
+                        if (!inv) {
+                            alert('Data invoice tidak valid.');
+                            return;
+                        }
+                        if (!this.currentUser || !this.currentUser.role) {
+                            alert('Akses Ditolak: Role pengguna belum tersedia. Silakan muat ulang halaman.');
+                            return;
+                        }
+                        const userRole = (this.currentUser.role || '').toLowerCase().trim();
+                        if (userRole !== 'owner' && userRole !== 'admin') {
+                            alert('Akses Ditolak: Fitur koreksi invoice hanya untuk Owner / Admin.');
+                            return;
+                        }
+                        if (inv.status === 'Void' || inv.status === 'Dibatalkan') {
+                            alert(`Invoice ${inv.invNo || ''} sudah berstatus Void/Dibatalkan.`);
+                            return;
+                        }
+
+                        const historyList = Array.isArray(this.paymentHistoryList) ? this.paymentHistoryList : [];
+                        const invNoStr = inv.invNo || inv.inv_no || '';
+                        const payments = historyList.filter(p => p.invNo === invNoStr && p.status !== 'VOID');
+                        if (payments && payments.length > 0) {
+                            alert(`DITOLAK: Invoice ${invNoStr} memiliki ${payments.length} riwayat pembayaran aktif. Batalkan pembayaran terlebih dahulu.`);
+                            return;
+                        }
+
+                        const proceed = confirm(`Mulai proses Koreksi untuk Invoice ${invNoStr}?\n\nInvoice lama akan di-VOID dan invoice baru akan diterbitkan dengan nomor revisi.`);
+                        if (!proceed) return;
+
+                        this.isCorrectInvoiceMode = true;
+                        this.correctingInvoiceObj = inv;
+                        this.correctInvoiceReason = 'Revisi Kesalahan Input Nominal/Detail';
+
+                        const targetInvId = inv.id || inv.supabaseId;
+                        let invItems = [];
+                        if (supabaseClient && targetInvId) {
+                            const { data: fetchedItems, error: itemsErr } = await supabaseClient
+                                .from('invoice_items')
+                                .select('*')
+                                .eq('invoice_id', targetInvId);
+                            if (itemsErr) console.warn('Supabase fetch invoice_items warning:', itemsErr);
+                            if (Array.isArray(fetchedItems)) invItems = fetchedItems;
+                        }
+
+                        if (invItems.length === 0 && Array.isArray(inv.items) && inv.items.length > 0) {
+                            invItems = inv.items;
+                        }
+
+                        const productsList = Array.isArray(this.products) ? this.products : [];
 
                         this.newQt = {
-                            qtNo: inv.invNo,
-                            customerName: inv.customerName || '',
-                            projectName: inv.customer_farm || inv.project_name || '',
-                            date: inv.date || this.getLocalDateString(),
-                            validUntil: inv.due_date ? inv.due_date.split('T')[0] : '',
+                            qtNo: invNoStr,
+                            customerName: inv.customerName || inv.customer_name || '',
+                            projectName: inv.customerFarm || inv.customer_farm || inv.projectName || inv.project_name || '',
+                            date: inv.date || inv.invoice_date || this.getLocalDateString(),
+                            validUntil: (inv.dueDate || inv.due_date) ? String(inv.dueDate || inv.due_date).split('T')[0] : '',
                             notes: '',
-                            items: invItems.map(i => ({
-                                productId: i.product_id,
-                                id: i.product_id,
-                                name: i.category === 'Jasa' ? 'Jasa' : 'Produk',
-                                category: i.category || 'General',
-                                unit: i.unit || 'Unit',
-                                qty: Number(i.qty) || 1,
-                                price: Number(i.price) || 0,
-                                discountType: i.discount_type || 'none',
-                                discountValue: Number(i.discount_value || 0),
-                                discountAmount: Number(i.discount_amount || 0)
-                            }))
+                            items: invItems.map(i => {
+                                const prodId = i.product_id || i.productId || i.id;
+                                const prod = productsList.find(p => p.id === prodId);
+                                return {
+                                    productId: prodId,
+                                    id: prodId,
+                                    name: prod ? prod.name : (i.name || (i.category === 'Jasa' ? 'Jasa' : 'Produk')),
+                                    category: i.category || (prod ? prod.category : 'General'),
+                                    unit: i.unit || (prod ? prod.unit : 'Unit'),
+                                    qty: Number(i.qty) || 1,
+                                    price: Number(i.price) || 0,
+                                    discountType: i.discount_type || i.discountType || 'none',
+                                    discountValue: Number(i.discount_value || i.discountValue || 0),
+                                    discountAmount: Number(i.discount_amount || i.discountAmount || 0)
+                                };
+                            })
                         };
-                        this.newQt.items.forEach(item => {
-                            const prod = this.products.find(p => p.id === item.productId);
-                            if (prod) item.name = prod.name;
-                        });
 
-                        this.paymentMethod = inv.payment_method || 'Verified_By_Server';
+                        this.paymentMethod = inv.payment_method || inv.paymentMethod || 'Cash';
                         this.showAddQuotationModal = true;
                     } catch (err) {
-                        alert('Gagal memuat detail invoice untuk dikoreksi.');
+                        console.error('Error in correctInvoice:', err);
+                        alert('Terjadi kesalahan saat membuka modal koreksi: ' + (err?.message || err));
                     }
                 },
 
