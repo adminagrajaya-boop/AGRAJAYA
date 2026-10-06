@@ -770,6 +770,7 @@
                                             <td class="p-3 text-slate-500">
                                                 <span x-text="inv.date"></span>
                                                 <span class="block text-[10px] text-amber-700 font-semibold"
+                                                    x-show="inv.dueDate && inv.dueDate !== '-' && inv.dueDate !== 'Cash' && inv.dueDate !== 'Lunas' && inv.status !== 'Lunas'"
                                                     x-text="'Tempo: ' + inv.dueDate"></span>
                                             </td>
                                             <td class="p-3">
@@ -811,6 +812,13 @@
                                                         :class="inv.remaining > 0 ? 'fa-wallet mr-1' : 'fa-clock-rotate-left mr-1'"></i>
                                                     <span
                                                         x-text="inv.remaining > 0 ? 'Bayar / Cicil' : 'Riwayat Bayar'"></span>
+                                                </button>
+                                                <button x-show="inv.status !== 'Lunas' && inv.remaining > 0"
+                                                    @click="markInvoiceAsCashPaid(inv)"
+                                                    class="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 font-bold text-[10px] rounded-lg transition-all"
+                                                    title="Tandai Invoice LUNAS (Non-Piutang / Cash)">
+                                                    <i class="fa-solid fa-check-double mr-1"></i>
+                                                    <span>Tandai Cash</span>
                                                 </button>
                                             </td>
                                         </tr>
@@ -2554,6 +2562,89 @@
             </div>
         </div>
 
+        <!-- MODAL: KONVERSI PENAWARAN KE INVOICE -->
+        <div x-show="showConvertModal" x-transition
+            class="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div class="bg-white rounded-3xl max-w-md w-full p-4 sm:p-5 space-y-4 shadow-2xl my-auto">
+                <div class="flex justify-between items-center pb-2 border-b border-slate-100">
+                    <h3 class="font-bold text-slate-800 text-sm">Konversi Penawaran Ke Invoice</h3>
+                    <button @click="showConvertModal = false" class="text-slate-400 hover:text-slate-600"><i
+                            class="fa-solid fa-xmark text-base"></i></button>
+                </div>
+
+                <template x-if="convertQtData">
+                    <div class="bg-slate-50 p-3 rounded-2xl border border-slate-200/80 space-y-0.5 text-center">
+                        <p class="text-[11px] text-slate-400">Penawaran: <span class="font-bold text-slate-700" x-text="convertQtData?.qtNo"></span></p>
+                        <p class="font-extrabold text-xl text-brand-600" x-text="formatRupiah(convertQtData?.total || 0)"></p>
+                        <p class="text-[11px] text-slate-500 font-medium" x-text="convertQtData?.customerName"></p>
+                    </div>
+                </template>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1.5">Tipe Transaksi Invoice</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button @click="convertPaymentMethod = 'Tunai'"
+                            :class="convertPaymentMethod === 'Tunai' ? 'border-emerald-600 bg-emerald-50 text-emerald-800 font-bold' : 'border-slate-200 text-slate-600'"
+                            class="py-2.5 border rounded-xl text-xs transition-all flex flex-col items-center gap-1">
+                            <i class="fa-solid fa-circle-check text-sm text-emerald-600"></i>
+                            <span>Cash / Lunas</span>
+                            <span class="text-[9px] font-normal text-slate-500">Penjualan Direct / Cash</span>
+                        </button>
+                        <button @click="convertPaymentMethod = 'Kredit'"
+                            :class="convertPaymentMethod === 'Kredit' ? 'border-amber-600 bg-amber-50 text-amber-800 font-bold' : 'border-slate-200 text-slate-600'"
+                            class="py-2.5 border rounded-xl text-xs transition-all flex flex-col items-center gap-1">
+                            <i class="fa-solid fa-clock text-sm text-amber-600"></i>
+                            <span>Tempo / Kredit</span>
+                            <span class="text-[9px] font-normal text-slate-500">Penjualan Piutang</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Input Opsi Cash -->
+                <div x-show="convertPaymentMethod === 'Tunai'" class="space-y-2">
+                    <label class="block text-xs font-bold text-slate-700">Akun Kas / Bank Penerimaan</label>
+                    <select x-model="convertPaymentAccountId" class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl">
+                        <template x-for="acc in (accountingAccounts || []).filter(a => a.type === 'Kas' || a.type === 'Bank' || a.type === 'Kas/Bank')" :key="acc.id">
+                            <option :value="acc.id" x-text="acc.name + ' (' + acc.code + ')'"></option>
+                        </template>
+                    </select>
+                    <div class="text-[11px] text-emerald-700 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200/80">
+                        <i class="fa-solid fa-info-circle mr-1"></i> Invoice diterbitkan berstatus <strong>LUNAS</strong>. Tanpa jatuh tempo 30 hari & tanpa piutang.
+                    </div>
+                </div>
+
+                <!-- Input Opsi Tempo / Kredit -->
+                <div x-show="convertPaymentMethod === 'Kredit'" class="space-y-2">
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-700 mb-1">DP / Uang Muka (Rp)</label>
+                            <input type="number" x-model.number="convertDpAmount" placeholder="0"
+                                class="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-700 mb-1">Jatuh Tempo (Opsional)</label>
+                            <input type="text" x-model="convertDueDate" placeholder="Kosong / misal: 30 Hari"
+                                class="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl">
+                            <div class="flex gap-1 mt-1">
+                                <button type="button" @click="convertDueDate = '30 Hari'" class="text-[9px] bg-slate-200 hover:bg-slate-300 px-1.5 py-0.5 rounded font-semibold text-slate-700">+ 30 Hari</button>
+                                <button type="button" @click="convertDueDate = '14 Hari'" class="text-[9px] bg-slate-200 hover:bg-slate-300 px-1.5 py-0.5 rounded font-semibold text-slate-700">+ 14 Hari</button>
+                                <button type="button" @click="convertDueDate = ''" class="text-[9px] bg-slate-200 hover:bg-slate-300 px-1.5 py-0.5 rounded font-semibold text-slate-700">Kosongkan</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-[11px] text-amber-800 bg-amber-50 p-2.5 rounded-xl border border-amber-200/80">
+                        <i class="fa-solid fa-triangle-exclamation mr-1"></i> Invoice dicatat sebagai <strong>Piutang Tempo</strong> <span x-show="convertDueDate">dengan jatuh tempo <strong x-text="convertDueDate"></strong></span>.
+                    </div>
+                </div>
+
+                <button @click="executeConvertQuotation()"
+                    class="w-full py-3 text-white font-bold bg-brand-600 hover:bg-brand-700 shadow-md shadow-brand-600/30 rounded-xl text-xs transition-all flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-file-invoice"></i>
+                    <span>Terbitkan Invoice</span>
+                </button>
+            </div>
+        </div>
+
         <!-- MODAL: BUAT PENAWARAN (QUOTATION) -->
         <div x-show="showAddQuotationModal" x-transition
             class="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
@@ -3475,6 +3566,14 @@
                 showPayPiutangModal: false,
                 showPayHutangModal: false,
 
+                // Quotation Conversion Modal State
+                showConvertModal: false,
+                convertQtData: null,
+                convertPaymentMethod: 'Tunai',
+                convertDueDate: '',
+                convertDpAmount: 0,
+                convertPaymentAccountId: null,
+
                 // Active View States
                 activeReceipt: {},
                 activePiutang: {},
@@ -3590,7 +3689,7 @@
                                 data = {
                                     id: userId,
                                     username: 'admin.agrajaya',
-                                    full_name: 'Mas Danang',
+                                    full_name: 'Dymas Danang',
                                     role: 'owner',
                                     is_active: true
                                 };
@@ -3610,7 +3709,7 @@
                             if (isNewOwner) {
                                 data.role = 'owner';
                                 data.is_active = true;
-                                if (!data.full_name) data.full_name = 'Mas Danang';
+                                if (!data.full_name) data.full_name = 'Dymas Danang';
                             } else if (isOldKasir) {
                                 data.role = 'kasir';
                                 data.is_active = true;
@@ -3996,7 +4095,7 @@
                                     invNo: row.inv_no,
                                     customerName: row.customer_name,
                                     customerFarm: row.customer_farm || '-',
-                                    dueDate: row.due_date || '30 Hari',
+                                    dueDate: row.due_date ? String(row.due_date) : '',
                                     date: dateVal,
                                     status: row.status || 'Belum Bayar',
                                     subtotal: Number(row.subtotal || 0),
@@ -4023,7 +4122,7 @@
                                 supabaseId: Number(row.id),
                                 invNo: row.inv_no,
                                 customerName: row.customer_name,
-                                dueDate: row.due_date || '30 Hari',
+                                dueDate: row.due_date ? String(row.due_date) : '',
                                 status: row.status || 'Belum Bayar',
                                 total: Number(row.total || 0),
                                 paid: Number(row.paid || 0),
@@ -4914,7 +5013,7 @@
                         invNo: invNo,
                         trxCode: code,
                         date: dateStr,
-                        dueDate: this.dueDate || '30 Hari',
+                        dueDate: (this.paymentMethod === 'Kredit' && this.dueDate) ? this.dueDate : '',
                         customerName: this.customerName || 'Pelanggan Umum',
                         customerFarm: this.customerFarm || '-',
                         items: cartItemsSnapshot.map(item => ({ ...item })),
@@ -4931,7 +5030,7 @@
                             invNo: invNo,
                             customerName: this.customerName || 'Pelanggan Kredit',
                             customerFarm: this.customerFarm || '-',
-                            dueDate: this.dueDate || '30 Hari',
+                            dueDate: (this.paymentMethod === 'Kredit' && this.dueDate) ? this.dueDate : '',
                             total: grandTotal,
                             paid: paid,
                             remaining: remaining
@@ -5331,8 +5430,57 @@
                     this.showAddQuotationModal = false;
                 },
 
-                async convertQuotationToInvoice(qt) {
+                openConvertQuotationModal(qt) {
                     if (!qt) return;
+
+                    if (qt.status !== 'Approved' && qt.status !== 'Deal') {
+                        if (qt.status === 'Converted' || qt.status === 'Invoiced') {
+                            alert(`Penawaran ${qt.qtNo || ''} sudah pernah dikonversi menjadi Invoice.`);
+                        } else {
+                            alert(`Penawaran ${qt.qtNo || ''} masih berstatus '${qt.status}'. Penawaran harus ditandai DEAL / APPROVED terlebih dahulu sebelum dapat dikonversi menjadi Invoice.`);
+                        }
+                        return;
+                    }
+
+                    const existingInv = this.invoiceList.find(inv => inv.quotationId === qt.id || inv.quotationNo === qt.qtNo);
+                    if (existingInv) {
+                        alert(`Penawaran ${qt.qtNo} sudah pernah dikonversi menjadi Invoice: ${existingInv.invNo}`);
+                        qt.status = 'Approved';
+                        this.saveDataToStorage();
+                        this.currentTab = 'invoice';
+                        return;
+                    }
+
+                    this.convertQtData = qt;
+                    this.convertPaymentMethod = 'Tunai'; // Default to Cash/Lunas (Non-Piutang)
+                    this.convertDueDate = '';
+                    this.convertDpAmount = 0;
+
+                    const kasAcc = (this.accountingAccounts || []).find(a => a.code === '1-1101' || (a.name && a.name.includes('Kas Utama')) || a.type === 'Kas' || a.type === 'Kas/Bank');
+                    this.convertPaymentAccountId = kasAcc ? kasAcc.id : null;
+                    this.showConvertModal = true;
+                },
+
+                async executeConvertQuotation() {
+                    if (!this.convertQtData) return;
+                    const qt = this.convertQtData;
+                    const options = {
+                        paymentMethod: this.convertPaymentMethod,
+                        dueDate: this.convertDueDate,
+                        dpAmount: this.convertDpAmount,
+                        paymentAccountId: this.convertPaymentAccountId
+                    };
+                    this.showConvertModal = false;
+                    await this.convertQuotationToInvoice(qt, options);
+                },
+
+                async convertQuotationToInvoice(qt, options) {
+                    if (!qt) return;
+
+                    if (!options) {
+                        this.openConvertQuotationModal(qt);
+                        return;
+                    }
 
                     // 1. Strict Status Guard: ONLY APPROVED / DEAL CAN BE CONVERTED
                     if (qt.status !== 'Approved' && qt.status !== 'Deal') {
@@ -5435,7 +5583,7 @@
                         });
                     }
 
-                    // Validasi qt.total jika tersedia (diberikan toleransi jika ada diskon)
+                    // Validasi qt.total jika tersedia
                     if (qt.total !== undefined && qt.total !== null) {
                         const qtTotalNum = Number(qt.total);
                         if (!Number.isFinite(qtTotalNum) || qtTotalNum < 0) {
@@ -5448,6 +5596,14 @@
                             return;
                         }
                     }
+
+                    // Options logic (Cash vs Credit)
+                    const isCash = options.paymentMethod === 'Tunai';
+                    const dueDateVal = isCash ? '-' : (options.dueDate && options.dueDate.trim() ? options.dueDate.trim() : null);
+                    const dpAmt = isCash ? computedNetTotal : Math.max(0, Number(options.dpAmount || 0));
+                    const paidAmtVal = isCash ? computedNetTotal : Math.min(computedNetTotal, dpAmt);
+                    const remainingVal = Math.max(0, computedNetTotal - paidAmtVal);
+                    const statusVal = isCash ? 'Lunas' : (paidAmtVal > 0 ? 'Sebagian' : 'Belum Bayar');
 
                     const invNo = this.generateCode('INV', this.invoiceList, 'invCounter');
                     const dateStr = this.getLocalDateString();
@@ -5499,14 +5655,14 @@
                             customer_id: customerIdNum,
                             customer_name: qt.customerName || 'Pelanggan',
                             customer_farm: qt.projectName || '-',
-                            due_date: '30 Hari',
+                            due_date: dueDateVal,
                             invoice_date: dateStr,
-                            status: 'Belum Bayar',
+                            status: statusVal,
                             subtotal: computedGrossTotal,
                             discount_total: computedDiscountTotal,
                             total: computedNetTotal,
-                            paid_amount: 0,
-                            remaining: computedNetTotal,
+                            paid_amount: paidAmtVal,
+                            remaining: remainingVal,
                             project_id: projectIdNum,
                             quotation_id: qtIdNum,
                             transaction_id: null,
@@ -5566,33 +5722,35 @@
                         return;
                     }
 
-                    // 8. PERSIST RECEIVABLE TO SUPABASE LIVE (public.receivables)
+                    // 8. PERSIST RECEIVABLE TO SUPABASE LIVE (public.receivables) ONLY IF KREDIT & REMAINING > 0
                     let insertedRecId = null;
-                    try {
-                        const recPayload = {
-                            inv_no: invNo,
-                            customer_name: qt.customerName || 'Pelanggan',
-                            due_date: '30 Hari',
-                            status: 'Belum Bayar',
-                            total: computedNetTotal,
-                            paid: 0,
-                            remaining: computedNetTotal,
-                            invoice_id: insertedInvId
-                        };
+                    if (!isCash && remainingVal > 0) {
+                        try {
+                            const recPayload = {
+                                inv_no: invNo,
+                                customer_name: qt.customerName || 'Pelanggan',
+                                due_date: dueDateVal,
+                                status: statusVal,
+                                total: computedNetTotal,
+                                paid: paidAmtVal,
+                                remaining: remainingVal,
+                                invoice_id: insertedInvId
+                            };
 
-                        const { data: insertedRec, error: recInsertErr } = await supabaseClient
-                            .from('receivables')
-                            .insert(recPayload)
-                            .select('id')
-                            .single();
+                            const { data: insertedRec, error: recInsertErr } = await supabaseClient
+                                .from('receivables')
+                                .insert(recPayload)
+                                .select('id')
+                                .single();
 
-                        if (recInsertErr) throw recInsertErr;
-                        if (insertedRec) insertedRecId = insertedRec.id;
-                    } catch (recErr) {
-                        console.error('Error persisting receivable to Supabase:', recErr);
-                        await this.rollbackInvoiceConversion(insertedInvId);
-                        alert('Gagal menyimpan piutang ke database Supabase: ' + (recErr.message || recErr) + '. Konversi dibatalkan.');
-                        return;
+                            if (recInsertErr) throw recInsertErr;
+                            if (insertedRec) insertedRecId = insertedRec.id;
+                        } catch (recErr) {
+                            console.error('Error persisting receivable to Supabase:', recErr);
+                            await this.rollbackInvoiceConversion(insertedInvId);
+                            alert('Gagal menyimpan piutang ke database Supabase: ' + (recErr.message || recErr) + '. Konversi dibatalkan.');
+                            return;
+                        }
                     }
 
                     // 9. POST SALES REVENUE JOURNAL TO GENERAL LEDGER VIA RPC post_journal_entry
@@ -5608,10 +5766,40 @@
                     const salesCoa = (this.accountingCOA || []).find(c => c.code === '4-1110');
                     const serviceCoa = (this.accountingCOA || []).find(c => c.code === '4-1120');
 
-                    if (!piutangCoa || !piutangCoa.id) {
-                        await this.rollbackInvoiceConversion(insertedInvId);
-                        alert('Bagan akun Piutang Usaha (1-1110) tidak ditemukan di database. Konversi invoice dibatalkan.');
-                        return;
+                    let paymentCoa = null;
+                    if (isCash) {
+                        paymentCoa = (this.accountingAccounts || []).find(a => a.id == options.paymentAccountId)
+                            || (this.accountingCOA || []).find(c => c.code === '1-1101')
+                            || (this.accountingCOA || []).find(c => c.type === 'Kas' || c.type === 'Kas/Bank');
+                    }
+
+                    const journalLines = [];
+                    if (isCash) {
+                        if (paymentCoa && paymentCoa.id) {
+                            journalLines.push({
+                                chart_of_account_id: Number(paymentCoa.id),
+                                debit: computedNetTotal,
+                                credit: 0,
+                                description: `Penerimaan Penjualan Cash Invoice ${invNo} (${qt.customerName || 'Pelanggan'})`
+                            });
+                        }
+                    } else {
+                        if (paidAmtVal > 0 && options.paymentAccountId) {
+                            journalLines.push({
+                                chart_of_account_id: Number(options.paymentAccountId),
+                                debit: paidAmtVal,
+                                credit: 0,
+                                description: `DP Penjualan Invoice ${invNo} (${qt.customerName || 'Pelanggan'})`
+                            });
+                        }
+                        if (remainingVal > 0 && piutangCoa && piutangCoa.id) {
+                            journalLines.push({
+                                chart_of_account_id: Number(piutangCoa.id),
+                                debit: remainingVal,
+                                credit: 0,
+                                description: `Piutang Usaha Invoice ${invNo} (${qt.customerName || 'Pelanggan'})`
+                            });
+                        }
                     }
 
                     let barangNetSubtotal = 0;
@@ -5626,28 +5814,7 @@
                         }
                     }
 
-                    if (barangNetSubtotal > 0 && (!salesCoa || !salesCoa.id)) {
-                        await this.rollbackInvoiceConversion(insertedInvId);
-                        alert('Bagan akun Pendapatan Penjualan Barang (4-1110) tidak ditemukan di database. Konversi invoice dibatalkan.');
-                        return;
-                    }
-
-                    if (jasaNetSubtotal > 0 && (!serviceCoa || !serviceCoa.id)) {
-                        await this.rollbackInvoiceConversion(insertedInvId);
-                        alert('Bagan akun Pendapatan Jasa & Instalasi (4-1120) tidak ditemukan di database. Konversi invoice dibatalkan.');
-                        return;
-                    }
-
-                    const journalLines = [
-                        {
-                            chart_of_account_id: Number(piutangCoa.id),
-                            debit: computedNetTotal,
-                            credit: 0,
-                            description: `Piutang Usaha ${invNo} (${qt.customerName || 'Pelanggan'})`
-                        }
-                    ];
-
-                    if (barangNetSubtotal > 0) {
+                    if (barangNetSubtotal > 0 && salesCoa && salesCoa.id) {
                         journalLines.push({
                             chart_of_account_id: Number(salesCoa.id),
                             debit: 0,
@@ -5656,7 +5823,7 @@
                         });
                     }
 
-                    if (jasaNetSubtotal > 0) {
+                    if (jasaNetSubtotal > 0 && serviceCoa && serviceCoa.id) {
                         journalLines.push({
                             chart_of_account_id: Number(serviceCoa.id),
                             debit: 0,
@@ -5665,26 +5832,28 @@
                         });
                     }
 
-                    try {
-                        const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry', {
-                            p_journal_date: dateStr,
-                            p_source_type: 'INVOICE',
-                            p_source_id: insertedInvId,
-                            p_source_code: invNo,
-                            p_description: `Jurnal Penjualan Invoice ${invNo} - ${qt.customerName || 'Pelanggan'}`,
-                            p_user_id: this.currentUser.id,
-                            p_lines: journalLines
-                        });
+                    if (journalLines.length > 0) {
+                        try {
+                            const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry', {
+                                p_journal_date: dateStr,
+                                p_source_type: 'INVOICE',
+                                p_source_id: insertedInvId,
+                                p_source_code: invNo,
+                                p_description: `Jurnal Penjualan Invoice ${invNo} - ${qt.customerName || 'Pelanggan'} (${isCash ? 'LUNAS/CASH' : 'KREDIT'})`,
+                                p_user_id: this.currentUser.id,
+                                p_lines: journalLines
+                            });
 
-                        if (journalError) throw journalError;
-                    } catch (jErr) {
-                        console.error('Error posting journal entry for invoice:', jErr);
-                        await this.rollbackInvoiceConversion(insertedInvId);
-                        alert('Gagal memposting jurnal penjualan invoice ke akuntansi: ' + (jErr.message || jErr) + '. Konversi dibatalkan.');
-                        return;
+                            if (journalError) throw journalError;
+                        } catch (jErr) {
+                            console.error('Error posting journal entry for invoice:', jErr);
+                            await this.rollbackInvoiceConversion(insertedInvId);
+                            alert('Gagal memposting jurnal penjualan invoice ke akuntansi: ' + (jErr.message || jErr) + '. Konversi dibatalkan.');
+                            return;
+                        }
                     }
 
-                    // 10. UPDATE REMOTE QUOTATION STATUS TO CONVERTED (POST-JOURNAL COMMIT)
+                    // 10. UPDATE REMOTE QUOTATION STATUS TO CONVERTED
                     if (qtIdNum) {
                         try {
                             const { error: qtUpdErr } = await supabaseClient
@@ -5692,15 +5861,13 @@
                                 .update({ status: 'Converted', updated_at: new Date().toISOString() })
                                 .eq('id', qtIdNum);
 
-                            if (qtUpdErr) {
-                                console.error('Gagal memperbarui status penawaran remote setelah jurnal terposting:', qtUpdErr);
-                            }
+                            if (qtUpdErr) console.error('Gagal memperbarui status penawaran remote:', qtUpdErr);
                         } catch (qtUpdErr) {
                             console.error('Error updating remote quotation status:', qtUpdErr);
                         }
                     }
 
-                    // 11. Update Local State (Compatibility with UI & Storage)
+                    // 11. Update Local State
                     const inv = {
                         id: insertedInvId || Date.now(),
                         supabaseId: insertedInvId,
@@ -5708,32 +5875,34 @@
                         quotationId: qt.id,
                         quotationNo: qt.qtNo,
                         date: dateStr,
-                        dueDate: '30 Hari',
+                        dueDate: dueDateVal,
                         customerName: qt.customerName || 'Pelanggan',
                         customerFarm: qt.projectName || '-',
                         items: validatedItems,
                         subtotal: computedGrossTotal,
                         discountTotal: computedDiscountTotal,
                         total: computedNetTotal,
-                        paidAmount: 0,
-                        remaining: computedNetTotal,
-                        status: 'Belum Bayar'
+                        paidAmount: paidAmtVal,
+                        remaining: remainingVal,
+                        status: statusVal
                     };
 
                     this.invoiceList.unshift(inv);
 
-                    const existingPiutang = this.piutangList.find(p => p.invNo === invNo);
-                    if (!existingPiutang && inv.remaining > 0) {
-                        this.piutangList.unshift({
-                            id: insertedRecId || Date.now(),
-                            invNo: invNo,
-                            customerName: inv.customerName,
-                            customerFarm: inv.customerFarm,
-                            dueDate: '30 Hari',
-                            total: computedNetTotal,
-                            paid: 0,
-                            remaining: computedNetTotal
-                        });
+                    if (!isCash && remainingVal > 0) {
+                        const existingPiutang = this.piutangList.find(p => p.invNo === invNo);
+                        if (!existingPiutang) {
+                            this.piutangList.unshift({
+                                id: insertedRecId || Date.now(),
+                                invNo: invNo,
+                                customerName: inv.customerName,
+                                customerFarm: inv.customerFarm,
+                                dueDate: dueDateVal,
+                                total: computedNetTotal,
+                                paid: paidAmtVal,
+                                remaining: remainingVal
+                            });
+                        }
                     }
 
                     qt.status = 'Converted';
@@ -5745,8 +5914,47 @@
                     }
 
                     this.saveDataToStorage();
-                    alert(`Penawaran ${qt.qtNo} berhasil dikonversi menjadi Invoice: ${invNo}`);
+                    alert(`Penawaran ${qt.qtNo} berhasil dikonversi menjadi Invoice (${isCash ? 'LUNAS / CASH' : 'KREDIT'}): ${invNo}`);
                     this.currentTab = 'invoice';
+                },
+
+                async markInvoiceAsCashPaid(inv) {
+                    if (!inv) return;
+                    if (!confirm(`Tandai Invoice ${inv.invNo} sebagai LUNAS (Transaksi Cash / Non-Piutang)?\n\nIni akan memperbarui status invoice menjadi LUNAS dan menghapus tagihan piutang.`)) {
+                        return;
+                    }
+                    try {
+                        const grandTotal = Number(inv.total || 0);
+                        const { error: invErr } = await supabaseClient
+                            .from('invoices')
+                            .update({
+                                status: 'Lunas',
+                                paid_amount: grandTotal,
+                                remaining: 0,
+                                due_date: '-'
+                            })
+                            .eq('inv_no', inv.invNo);
+
+                        if (invErr) throw invErr;
+
+                        await supabaseClient
+                            .from('receivables')
+                            .delete()
+                            .eq('inv_no', inv.invNo);
+
+                        inv.status = 'Lunas';
+                        inv.paidAmount = grandTotal;
+                        inv.remaining = 0;
+                        inv.dueDate = '-';
+
+                        this.piutangList = this.piutangList.filter(p => p.invNo !== inv.invNo);
+                        this.saveDataToStorage();
+
+                        alert(`Invoice ${inv.invNo} berhasil ditandai LUNAS (Non-Piutang).`);
+                    } catch (err) {
+                        console.error('Error marking invoice as cash paid:', err);
+                        alert('Gagal memperbarui status invoice: ' + (err.message || err));
+                    }
                 },
 
                 async rollbackInvoiceConversion(insertedInvId) {
@@ -6405,7 +6613,7 @@
                                 .insert({
                                     inv_no: inv.invNo,
                                     customer_name: inv.customerName || this.activePiutang.customerName || 'Pelanggan',
-                                    due_date: '30 Hari',
+                                    due_date: inv.dueDate || null,
                                     status: newStatus,
                                     total: pTotal,
                                     paid: newPaid,
@@ -7848,11 +8056,22 @@
 
                     const invNo = inv.invNo || ('INV-' + (inv.id || ''));
                     const dateStr = inv.date || this.getLocalDateString();
-                    const dueDateStr = inv.dueDate || '30 Hari';
                     const customerName = inv.customerName || 'Pelanggan Umum';
                     const customerFarm = (inv.customerFarm && inv.customerFarm !== '-') ? inv.customerFarm : 'Kandang / Lokasi Proyek';
                     const trxRef = inv.trxCode || inv.quotationNo || '-';
-                    const statusStr = inv.status || ((Number(inv.remaining || 0) <= 0) ? 'Lunas' : 'Belum Lunas');
+
+                    const paidAmount = Number(inv.paidAmount || inv.paid || 0);
+                    const remaining = (inv.remaining !== undefined && inv.remaining !== null)
+                        ? Number(inv.remaining)
+                        : Math.max(0, Number(inv.total || 0) - paidAmount);
+
+                    const statusStr = inv.status || ((remaining <= 0) ? 'Lunas' : 'Belum Bayar');
+
+                    // Check if Cash / Non-Piutang transaction
+                    const isCashTx = (statusStr === 'Lunas' || remaining <= 0 || inv.dueDate === '-' || inv.dueDate === 'Cash' || inv.dueDate === 'Lunas' || (inv.paymentMethod && inv.paymentMethod !== 'Kredit' && inv.paymentMethod !== 'Tempo'));
+
+                    const hasDueDate = Boolean(!isCashTx && inv.dueDate && String(inv.dueDate).trim() !== '' && inv.dueDate !== '-' && inv.dueDate !== 'Cash' && inv.dueDate !== 'Lunas');
+                    const dueDateStr = hasDueDate ? String(inv.dueDate).trim() : '';
 
                     // Resolve items from inv, or trx, or penawaran
                     let items = [];
@@ -7898,10 +8117,6 @@
                     const subtotalKotor = (inv.subtotal !== undefined && inv.subtotal !== null && Number(inv.subtotal) > 0)
                         ? Number(inv.subtotal)
                         : (computedGrossTotal > 0 ? computedGrossTotal : grandTotal);
-                    const paidAmount = Number(inv.paidAmount || inv.paid || 0);
-                    const remaining = (inv.remaining !== undefined && inv.remaining !== null)
-                        ? Number(inv.remaining)
-                        : Math.max(0, grandTotal - paidAmount);
 
                     // Status pill styling
                     let statusStyle = 'background-color: #fef3c7; color: #b45309; border-color: #fde68a;';
@@ -7913,7 +8128,7 @@
                         statusStyle = 'background-color: #fee2e2; color: #b91c1c; border-color: #fca5a5;';
                     }
 
-                    const isDueDateWarning = (statusStr === 'Jatuh Tempo' || (statusStr !== 'Lunas' && statusStr !== 'Dibatalkan'));
+                    const isDueDateWarning = !isCashTx && (statusStr === 'Jatuh Tempo' || (statusStr !== 'Lunas' && statusStr !== 'Dibatalkan'));
 
                     // Rows HTML
                     let rowsHtml = '';
@@ -7952,15 +8167,20 @@
 
                     // Payment note
                     let noteText = '';
-                    if (statusStr === 'Lunas') {
+                    if (isCashTx) {
                         noteText = 'Faktur ini telah dinyatakan <strong>LUNAS</strong>. Terima kasih atas pembayaran tepat waktu.';
                     } else if (statusStr === 'Sebagian') {
-                        noteText = `Telah dibayarkan sebesar <strong>${formatRp(paidAmount)}</strong>. Sisa tagihan sebesar <strong>${formatRp(remaining)}</strong> dengan batas jatuh tempo <strong>${escapeHtml(dueDateStr)}</strong>.`;
+                        noteText = `Telah dibayarkan sebesar <strong>${formatRp(paidAmount)}</strong>. Sisa tagihan sebesar <strong>${formatRp(remaining)}</strong>${hasDueDate ? ` dengan batas jatuh tempo <strong>${escapeHtml(dueDateStr)}</strong>` : ''}.`;
                     } else {
-                        noteText = `Tagihan belum terbayar. Harap selesaikan pembayaran sebesar <strong>${formatRp(remaining)}</strong> paling lambat tanggal jatuh tempo <strong>${escapeHtml(dueDateStr)}</strong>.`;
+                        noteText = `Tagihan belum terbayar. Harap selesaikan pembayaran sebesar <strong>${formatRp(remaining)}</strong>${hasDueDate ? ` paling lambat tanggal jatuh tempo <strong>${escapeHtml(dueDateStr)}</strong>` : ''}.`;
                     }
 
-                    const paymentType = remaining > 0 ? (paidAmount > 0 ? 'Cicilan / Tempo' : 'Tempo / Kredit') : 'Lunas';
+                    let paymentType = 'Lunas (Tunai)';
+                    if (!isCashTx) {
+                        paymentType = paidAmount > 0 ? 'Cicilan / Tempo' : 'Tempo / Kredit';
+                    } else if (inv.paymentMethod && inv.paymentMethod !== 'Kredit') {
+                        paymentType = 'Lunas (' + inv.paymentMethod + ')';
+                    }
 
                     return `<!DOCTYPE html>
 <html lang="id">
@@ -8324,7 +8544,7 @@
                             <div class="brand-sub">Peralatan & Instalasi Closed House</div>
                             <div class="brand-meta">
                                 <div>${escapeHtml(this.businessAddress || 'Purwokerto, Indonesia')}</div>
-                                <div>WA: ${escapeHtml(this.businessPhone || '+62 821-3878-5510')} (${escapeHtml(this.ownerName || 'Dymas Danang')})</div>
+                                <div>WA: ${escapeHtml(this.businessPhone || '+62 821-3878-5510')} (Dymas Danang)</div>
                             </div>
                         </div>
                     </div>
@@ -8339,10 +8559,12 @@
                                 <td class="lbl">Tanggal:</td>
                                 <td class="val">${escapeHtml(dateStr)}</td>
                             </tr>
+                            ${hasDueDate ? `
                             <tr>
                                 <td class="lbl">Jatuh Tempo:</td>
                                 <td class="val" style="color:${isDueDateWarning ? '#b91c1c' : '#0f172a'};">${escapeHtml(dueDateStr)}</td>
                             </tr>
+                            ` : ''}
                             <tr>
                                 <td class="lbl">Status:</td>
                                 <td><span class="status-pill" style="${statusStyle}">${escapeHtml(statusStr)}</span></td>
@@ -8404,11 +8626,11 @@
                         </div>
                         <div class="summary-row paid-row">
                             <span>Sudah Dibayar:</span>
-                            <span>${formatRp(paidAmount)}</span>
+                            <span>${formatRp(isCashTx ? grandTotal : paidAmount)}</span>
                         </div>
-                        <div class="summary-row remain-row">
+                        <div class="summary-row ${isCashTx ? 'paid-row' : 'remain-row'}">
                             <span>Sisa Tagihan:</span>
-                            <span>${formatRp(remaining)}</span>
+                            <span>${formatRp(isCashTx ? 0 : remaining)}</span>
                         </div>
                     </div>
                 </div>
@@ -8423,7 +8645,7 @@
                     </div>
                     <div class="sign-col">
                         <div class="sign-role">Hormat Kami, AGRA JAYA</div>
-                        <div class="sign-name">( ${escapeHtml(this.ownerName || 'Dymas Danang')} )</div>
+                        <div class="sign-name">( Dymas Danang )</div>
                     </div>
                 </div>
 
