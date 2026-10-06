@@ -5157,7 +5157,7 @@
 
                 async correctInvoice(inv) {
                     if (!inv) return;
-                    const userRole = this.currentUser?.user_metadata?.role || 'kasir';
+                    const userRole = (this.currentUser?.role || '').toLowerCase();
                     if (userRole !== 'owner' && userRole !== 'admin') {
                         alert('Akses Ditolak: Fitur koreksi invoice hanya untuk Owner / Admin.');
                         return;
@@ -5220,6 +5220,11 @@
 
                 async executeCorrectInvoice() {
                     if (!this.correctingInvoiceObj || !this.newQt || this.isSubmittingCorrection) return;
+                    const userRole = (this.currentUser?.role || '').toLowerCase();
+                    if (userRole !== 'owner' && userRole !== 'admin') {
+                        alert('Akses Ditolak: Fitur koreksi invoice hanya untuk Owner / Admin.');
+                        return;
+                    }
                     if (!this.newQt.customerName) return alert('Nama pelanggan wajib diisi.');
                     if (!this.newQt.items || this.newQt.items.length === 0) return alert('Minimal 1 barang.');
 
@@ -5281,7 +5286,7 @@
                         if (rpcErr) throw rpcErr;
 
                         alert('Koreksi Berhasil! Invoice pengganti baru: ' + (rpcData?.new_invoice_no || candidateInvNo));
-                        
+
                         this.showAddQuotationModal = false;
                         this.isCorrectInvoiceMode = false;
                         this.correctingInvoiceObj = null;
