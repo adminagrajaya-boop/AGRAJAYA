@@ -2653,9 +2653,9 @@
                     <select x-model="convertPaymentAccountId"
                         class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl">
                         <template
-                            x-for="acc in (accountingAccounts || []).filter(a => a.type === 'Kas' || a.type === 'Bank' || a.type === 'Kas/Bank')"
+                            x-for="acc in (accountingPaymentAccounts || []).filter(a => a.type === 'CASH' || a.type === 'BANK' || a.type === 'GATEWAY' || (a.chart_of_accounts && (a.chart_of_accounts.type === 'Kas' || a.chart_of_accounts.type === 'Bank' || a.chart_of_accounts.type === 'Kas/Bank')))"
                             :key="acc.id">
-                            <option :value="acc.id" x-text="acc.name + ' (' + acc.code + ')'"></option>
+                            <option :value="acc.id" x-text="acc.name + (acc.chart_of_accounts ? ' (' + acc.chart_of_accounts.code + ')' : '')"></option>
                         </template>
                     </select>
                     <div
@@ -5230,7 +5230,7 @@
                                 .from('quotation_items')
                                 .delete()
                                 .eq('quotation_id', qt.id);
-                            
+
                             if (itemsErr) throw itemsErr;
 
                             const { error: qtErr } = await supabaseClient
@@ -5568,7 +5568,7 @@
                     this.convertDueDate = '';
                     this.convertDpAmount = 0;
 
-                    const kasAcc = (this.accountingAccounts || []).find(a => a.code === '1-1101' || (a.name && a.name.includes('Kas Utama')) || a.type === 'Kas' || a.type === 'Kas/Bank');
+                    const kasAcc = (this.accountingPaymentAccounts || []).find(a => (a.chart_of_accounts && a.chart_of_accounts.code === '1-1101') || (a.name && a.name.includes('Kas Utama')) || a.type === 'CASH');
                     this.convertPaymentAccountId = kasAcc ? kasAcc.id : null;
                     this.showConvertModal = true;
                 },
@@ -5693,6 +5693,11 @@
                             grossSubtotal: grossSubtotal,
                             subtotal: netSubtotal
                         });
+                    }
+
+                    if (computedNetTotal <= 0) {
+                        alert("Invoice dengan total Rp0 tidak dapat dibuat. Silakan periksa kembali harga atau diskon.");
+                        return;
                     }
 
                     // Validasi qt.total jika tersedia
@@ -5876,35 +5881,52 @@
 
                     const piutangCoa = (this.accountingCOA || []).find(c => c.code === '1-1110');
                     const salesCoa = (this.accountingCOA || []).find(c => c.code === '4-1110');
-                    const serviceCoa = (this.accountingCOA || []).find(c => c.code === '4-1120');
+                    const serviceCoa = (this.accountingCOA || []).find(c => c.code === '4-1120') || salesCoa;
 
-                    let paymentCoa = null;
-                    if (isCash) {
-                        paymentCoa = (this.accountingAccounts || []).find(a => a.id == options.paymentAccountId)
-                            || (this.accountingCOA || []).find(c => c.code === '1-1101')
-                            || (this.accountingCOA || []).find(c => c.type === 'Kas' || c.type === 'Kas/Bank');
+                    if (!piutangCoa || !piutangCoa.id || !salesCoa || !salesCoa.id) {
+                        await this.rollbackInvoiceConversion(insertedInvId);
+                        alert('Gagal: Bagan akun esensial (1-1110 atau 4-1110) tidak ditemukan di database. Jurnal tidak bisa diposting.');
+                        return;
+                    }
+
+                    let paymentCoaId = null;
+                    if (options.paymentAccountId) {
+                        const payAcc = (this.accountingPaymentAccounts || []).find(a => a.id == options.paymentAccountId);
+                        if (payAcc && payAcc.chart_of_accounts) paymentCoaId = Number(payAcc.chart_of_accounts.id);
+                    }
+                    if (!paymentCoaId) {
+                        const fallbackKas = (this.accountingCOA || []).find(c => c.code === '1-1101' || c.type === 'Kas' || c.type === 'Kas/Bank');
+                        if (fallbackKas) paymentCoaId = Number(fallbackKas.id);
                     }
 
                     const journalLines = [];
                     if (isCash) {
-                        if (paymentCoa && paymentCoa.id) {
+                        if (paymentCoaId) {
                             journalLines.push({
-                                chart_of_account_id: Number(paymentCoa.id),
+                                chart_of_account_id: paymentCoaId,
                                 debit: computedNetTotal,
                                 credit: 0,
                                 description: `Penerimaan Penjualan Cash Invoice ${invNo} (${qt.customerName || 'Pelanggan'})`
                             });
+                        } else {
+                            await this.rollbackInvoiceConversion(insertedInvId);
+                            alert('Gagal: Bagan akun Kas tidak ditemukan. Jurnal tidak bisa diposting.');
+                            return;
                         }
                     } else {
-                        if (paidAmtVal > 0 && options.paymentAccountId) {
+                        if (paidAmtVal > 0 && paymentCoaId) {
                             journalLines.push({
-                                chart_of_account_id: Number(options.paymentAccountId),
+                                chart_of_account_id: paymentCoaId,
                                 debit: paidAmtVal,
                                 credit: 0,
                                 description: `DP Penjualan Invoice ${invNo} (${qt.customerName || 'Pelanggan'})`
                             });
+                        } else if (paidAmtVal > 0 && !paymentCoaId) {
+                            await this.rollbackInvoiceConversion(insertedInvId);
+                            alert('Gagal: Akun pembayaran untuk DP tidak ditemukan.');
+                            return;
                         }
-                        if (remainingVal > 0 && piutangCoa && piutangCoa.id) {
+                        if (remainingVal > 0) {
                             journalLines.push({
                                 chart_of_account_id: Number(piutangCoa.id),
                                 debit: remainingVal,
@@ -5926,7 +5948,7 @@
                         }
                     }
 
-                    if (barangNetSubtotal > 0 && salesCoa && salesCoa.id) {
+                    if (barangNetSubtotal > 0) {
                         journalLines.push({
                             chart_of_account_id: Number(salesCoa.id),
                             debit: 0,
@@ -5944,7 +5966,7 @@
                         });
                     }
 
-                    if (journalLines.length > 0) {
+                    if (journalLines.length >= 2 && computedNetTotal > 0) {
                         try {
                             const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry', {
                                 p_journal_date: dateStr,
@@ -6001,7 +6023,7 @@
 
                     this.invoiceList.unshift(inv);
                     this.saveDataToStorage();
-                    
+
                     // ... (rest of function continues) ...
 
                     if (!isCash && remainingVal > 0) {
@@ -6047,7 +6069,7 @@
                     }
 
                     let warnMsg = `Yakin membatalkan (VOID) Invoice ${inv.invNo}?\n\nPerhatian:\n1. Status Invoice akan menjadi Dibatalkan.\n2. Jurnal akuntansi terkait invoice ini (Piutang & Penjualan) akan dibalikkan (reverse) secara otomatis oleh sistem.\n3. Saldo Piutang (jika ada) akan dihapus.\n4. Quotation asal (jika ada) akan kembali berstatus Approved.`;
-                    
+
                     const confirmCancel = confirm(warnMsg);
                     if (!confirmCancel) return;
 
@@ -6062,7 +6084,7 @@
                                 .eq('status', 'POSTED')
                                 .eq('is_reversal', false)
                                 .maybeSingle();
-                            
+
                             if (jrnErr) console.warn('Could not fetch journal to reverse:', jrnErr);
                             if (jrnData) journalIdToReverse = jrnData.id;
 
@@ -6081,8 +6103,8 @@
 
                             const { error: invErr } = await supabaseClient
                                 .from('invoices')
-                                .update({ 
-                                    status: 'Dibatalkan', 
+                                .update({
+                                    status: 'Dibatalkan',
                                     voided_at: new Date().toISOString(),
                                     voided_by: this.currentUser.id,
                                     remaining: 0
@@ -6102,7 +6124,7 @@
                                     .update({ status: 'Approved' })
                                     .eq('id', inv.quotationId);
                                 if (qtUpdErr) console.warn('Warning: failed to revert quotation status', qtUpdErr);
-                                
+
                                 const localQt = this.penawaranList.find(q => q.id === inv.quotationId);
                                 if (localQt) localQt.status = 'Approved';
                             }
@@ -6116,7 +6138,7 @@
                     inv.status = 'Dibatalkan';
                     inv.remaining = 0;
                     this.saveDataToStorage();
-                    
+
                     const recIndex = this.piutangList.findIndex(p => p.invNo === inv.invNo);
                     if (recIndex !== -1) {
                         this.piutangList[recIndex].status = 'Dibatalkan';
@@ -8818,6 +8840,15 @@
                         <div style="font-weight:700; color:#0f172a; margin-bottom:4px;"><i class="fa-solid fa-circle-info" style="color:#0284c7; margin-right:4px;"></i>Catatan & Ketentuan Pembayaran:</div>
                         <div>${noteText}</div>
                         <div style="margin-top:6px; color:#64748b; font-size:9.5px;">Konfirmasi pembayaran: <strong>${escapeHtml(this.businessPhone || '+62 821-3878-5510')}</strong></div>
+                        <div style="margin-top: 12px; font-weight:700; color:#0f172a;"><i class="fa-solid fa-building-columns" style="color:#0284c7; margin-right:4px;"></i>Rekening Pembayaran:</div>
+                        <div style="margin-top: 4px; font-size: 10px; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px;">
+                            <div style="font-weight:600;">BCA</div>
+                            <div>: 0970826793<br>&nbsp; a.n. Dymas Danang</div>
+                            <div style="font-weight:600;">BRI</div>
+                            <div>: 682501017331539<br>&nbsp; a.n. Dimas Danang</div>
+                            <div style="font-weight:600;">Bank Mandiri</div>
+                            <div>: 1390016249918<br>&nbsp; a.n. DIMAS DANANG PRIYOSE</div>
+                        </div>
                     </div>
                     <div class="summary-box">
                         <div class="summary-row" style="${computedDiscountTotal > 0 ? '' : 'display:none;'}">
