@@ -2723,8 +2723,9 @@
                     <h3 class="font-bold text-slate-800 text-sm"
                         x-text="isCorrectInvoiceMode ? 'Koreksi Invoice (' + (correctingInvoiceObj?.invNo || '') + ')' : (editingQtId ? 'Edit Penawaran Harga (' + (newQt.qtNo || '') + ')' : 'Buat Penawaran Harga Baru')">
                     </h3>
-                    <button @click="showAddQuotationModal = false; isCorrectInvoiceMode = false; correctingInvoiceObj = null;" class="text-slate-400"><i
-                            class="fa-solid fa-xmark text-base"></i></button>
+                    <button
+                        @click="showAddQuotationModal = false; isCorrectInvoiceMode = false; correctingInvoiceObj = null;"
+                        class="text-slate-400"><i class="fa-solid fa-xmark text-base"></i></button>
                 </div>
 
                 <div class="space-y-2.5 text-xs">
@@ -5146,7 +5147,7 @@
                     this.showAddQuotationModal = true;
                 },
 
-                
+
                 async correctInvoice(inv) {
                     if (!inv) return;
                     const userRole = this.currentUser?.user_metadata?.role || 'kasir';
@@ -5158,16 +5159,18 @@
                         alert(`Invoice ${inv.invNo} sudah berstatus Void/Dibatalkan.`);
                         return;
                     }
+
                     const payments = this.paymentHistoryList.filter(p => p.invNo === inv.invNo && p.status !== 'VOID');
                     if (payments && payments.length > 0) {
                         alert(`DITOLAK: Invoice ${inv.invNo} memiliki riwayat pembayaran. Batalkan pembayaran terlebih dahulu.`);
                         return;
                     }
+
                     if (!confirm(`Mulai proses Koreksi untuk Invoice ${inv.invNo}?\n\nInvoice lama akan di-VOID dan invoice baru akan diterbitkan dengan nomor revisi.`)) return;
 
                     this.isCorrectInvoiceMode = true;
                     this.correctingInvoiceObj = inv;
-                    this.correctInvoiceReason = 'Revisi/Koreksi Kesalahan Input';
+                    this.correctInvoiceReason = 'Revisi Kesalahan Input Nominal/Detail';
 
                     try {
                         const { data: invItems, error: itemsErr } = await supabaseClient
@@ -5181,138 +5184,110 @@
                             customerName: inv.customerName || '',
                             projectName: inv.customer_farm || inv.project_name || '',
                             date: inv.date || this.getLocalDateString(),
-                            validUntil: inv.due_date || this.addDaysToDateString(inv.date || this.getLocalDateString(), 30),
+                            validUntil: inv.due_date ? inv.due_date.split('T')[0] : '',
                             notes: '',
                             items: invItems.map(i => ({
-                                productId: i.product_id, id: i.product_id, name: i.category === 'Jasa' ? 'Jasa' : 'Produk',
-                                category: i.category || 'General', unit: i.unit || 'Unit', qty: Number(i.qty) || 1, price: Number(i.price) || 0,
-                                discountType: i.discount_type || 'none', discountValue: Number(i.discount_value || 0), discountAmount: Number(i.discount_amount || 0)
+                                productId: i.product_id,
+                                id: i.product_id,
+                                name: i.category === 'Jasa' ? 'Jasa' : 'Produk',
+                                category: i.category || 'General',
+                                unit: i.unit || 'Unit',
+                                qty: Number(i.qty) || 1,
+                                price: Number(i.price) || 0,
+                                discountType: i.discount_type || 'none',
+                                discountValue: Number(i.discount_value || 0),
+                                discountAmount: Number(i.discount_amount || 0)
                             }))
                         };
                         this.newQt.items.forEach(item => {
                             const prod = this.products.find(p => p.id === item.productId);
                             if (prod) item.name = prod.name;
                         });
-                        this.paymentMethod = (inv.status === 'Lunas' && !inv.due_date) ? 'Cash' : 'Kredit';
+
+                        this.paymentMethod = inv.payment_method || 'Verified_By_Server';
                         this.showAddQuotationModal = true;
                     } catch (err) {
-                        alert('Gagal memuat detail invoice.');
+                        alert('Gagal memuat detail invoice untuk dikoreksi.');
                     }
                 },
 
-                async saveCorrectedInvoice() {
-                    if (!this.correctingInvoiceObj || !this.newQt) return;
+                async executeCorrectInvoice() {
+                    if (!this.correctingInvoiceObj || !this.newQt || this.isSubmittingCorrection) return;
                     if (!this.newQt.customerName) return alert('Nama pelanggan wajib diisi.');
                     if (!this.newQt.items || this.newQt.items.length === 0) return alert('Minimal 1 barang.');
 
+                    const reason = prompt("Masukkan alasan koreksi invoice (WAJIB):", this.correctInvoiceReason || "Revisi Kesalahan Input");
+                    if (!reason || !reason.trim()) {
+                        alert("Alasan koreksi wajib diisi!");
+                        return;
+                    }
+
+                    this.isSubmittingCorrection = true;
                     const oldInv = this.correctingInvoiceObj;
                     const dateStr = this.getLocalDateString();
-                    
-                    let computedGrossTotal = 0;
-                    let computedDiscountTotal = 0;
-                    let computedNetTotal = 0;
-                    const validatedItems = [];
 
+                    const validatedItems = [];
                     for (const item of this.newQt.items) {
                         const qty = Math.max(0, Number(item.qty) || 0);
                         const price = Math.max(0, Number(item.price) || 0);
                         const prod = this.products.find(p => p.id === item.productId);
-                        if (!prod) return alert('Produk tidak ditemukan.');
-                        const grossSubtotal = Math.round((qty * price) * 100) / 100;
-                        let discAmt = item.discountAmount || 0;
-                        const netSubtotal = Math.max(0, Math.round((grossSubtotal - discAmt) * 100) / 100);
-                        computedGrossTotal += grossSubtotal;
-                        computedDiscountTotal += discAmt;
-                        computedNetTotal += netSubtotal;
+                        if (!prod) {
+                            this.isSubmittingCorrection = false;
+                            return alert('Produk tidak ditemukan.');
+                        }
                         validatedItems.push({
-                            product_id: prod.id, category: prod.category || item.category || 'General',
-                            unit: prod.unit || item.unit || 'Unit', qty: qty, price: price,
-                            discount_type: item.discountType || 'none', discount_value: item.discountValue || 0,
-                            discount_amount: discAmt, subtotal: netSubtotal
+                            product_id: prod.id,
+                            category: prod.category || item.category || 'General',
+                            unit: prod.unit || item.unit || 'Unit',
+                            qty: qty,
+                            price: price,
+                            discount_type: item.discountType || 'none',
+                            discount_value: Number(item.discountValue || 0)
                         });
                     }
 
-                    if (computedNetTotal <= 0) return alert("Total tidak boleh 0.");
-
-                    const isCash = this.paymentMethod === 'Cash';
-                    const dueDateVal = isCash ? null : (this.newQt.validUntil || null);
-                    const paidAmtVal = isCash ? computedNetTotal : 0;
-                    const remainingVal = Math.max(0, computedNetTotal - paidAmtVal);
-                    const statusVal = isCash ? 'Lunas' : 'Belum Bayar';
-
-                    // Prepare RPC Payloads
-                    const newInvNo = this.generateCode('INV', this.invoiceList, 'invCounter') + '-REV';
+                    const candidateInvNo = this.generateCode('INV', this.invoiceList, 'invCounter') + '-REV';
                     const projectIdNum = Number.isSafeInteger(Number(oldInv.project_id)) ? Number(oldInv.project_id) : null;
                     const customerIdNum = Number.isSafeInteger(Number(oldInv.customer_id)) ? Number(oldInv.customer_id) : null;
 
                     const newInvData = {
-                        inv_no: newInvNo, customer_id: customerIdNum, customer_name: this.newQt.customerName,
-                        customer_farm: this.newQt.projectName, due_date: dueDateVal, invoice_date: dateStr,
-                        status: statusVal, subtotal: computedGrossTotal, discount_total: computedDiscountTotal,
-                        total: computedNetTotal, paid_amount: paidAmtVal, remaining: remainingVal,
-                        project_id: projectIdNum, quotation_id: oldInv.quotationId, transaction_id: null
+                        inv_no: candidateInvNo,
+                        customer_id: customerIdNum,
+                        customer_name: this.newQt.customerName,
+                        customer_farm: this.newQt.projectName,
+                        due_date: this.newQt.validUntil || oldInv.due_date || null,
+                        invoice_date: dateStr,
+                        discount_total: Number(this.newQt.discountTotal || 0),
+                        project_id: projectIdNum,
+                        quotation_id: oldInv.quotationId,
+                        transaction_id: null
                     };
-
-                    let newRecData = null;
-                    if (!isCash) {
-                        newRecData = {
-                            customer_id: customerIdNum, customer_name: this.newQt.customerName,
-                            total_amount: computedNetTotal, paid_amount: 0, remaining: remainingVal,
-                            due_date: dueDateVal, status: 'Belum Bayar'
-                        };
-                    }
-
-                    // For journal, we need to construct it similarly
-                    let newJournalData = null;
-                    let newJournalLines = [];
-                    // Simplification for the sake of the script, assuming standard accounts
-                    const kasCoa = this.accountingCOA.find(c => c.code === '1-1101');
-                    const piutangCoa = this.accountingCOA.find(c => c.code === '1-1110');
-                    const salesCoa = this.accountingCOA.find(c => c.code === '4-1110');
-
-                    if (salesCoa) {
-                        newJournalData = {
-                            journal_no: this.generateCode('JRN', [], 'trxCounter'),
-                            journal_date: dateStr,
-                            description: 'Penjualan Invoice Koreksi ' + newInvNo,
-                            source_type: 'INVOICE',
-                            status: 'POSTED'
-                        };
-                        if (isCash && kasCoa) {
-                            newJournalLines.push({ chart_of_account_id: kasCoa.id, description: 'Penerimaan Penjualan Cash', debit: computedNetTotal, credit: 0 });
-                        } else if (!isCash && piutangCoa) {
-                            newJournalLines.push({ chart_of_account_id: piutangCoa.id, description: 'Piutang Penjualan', debit: computedNetTotal, credit: 0 });
-                        }
-                        newJournalLines.push({ chart_of_account_id: salesCoa.id, description: 'Pendapatan Penjualan', debit: 0, credit: computedNetTotal });
-                    }
 
                     try {
                         const { data: rpcData, error: rpcErr } = await supabaseClient.rpc('correct_invoice_atomic', {
                             p_old_inv_id: oldInv.id || oldInv.supabaseId,
-                            p_user_id: this.currentUser.id,
-                            p_correction_reason: this.correctInvoiceReason,
+                            p_correction_reason: reason.trim(),
                             p_new_inv_data: newInvData,
-                            p_new_inv_items: validatedItems,
-                            p_new_rec_data: newRecData,
-                            p_new_journal_data: newJournalData,
-                            p_new_journal_lines: newJournalLines
+                            p_new_inv_items: validatedItems
                         });
 
                         if (rpcErr) throw rpcErr;
+
+                        alert('Koreksi Berhasil! Invoice pengganti baru: ' + (rpcData?.new_invoice_no || candidateInvNo));
                         
-                        alert('Koreksi berhasil! Invoice baru dibuat: ' + newInvNo);
                         this.showAddQuotationModal = false;
                         this.isCorrectInvoiceMode = false;
                         this.correctingInvoiceObj = null;
-                        
-                        // Reload data
+
                         await this.loadAccountingDataFromSupabase();
                     } catch (err) {
                         console.error(err);
                         alert('Koreksi Gagal: ' + (err.message || err));
+                    } finally {
+                        this.isSubmittingCorrection = false;
                     }
                 },
-editQuotation(qt) {
+                editQuotation(qt) {
                     if (!qt) return;
                     if (qt.status === 'Converted' || qt.status === 'Invoiced') {
                         alert(`Penawaran ${qt.qtNo || ''} sudah dikonversi menjadi Invoice dan tidak dapat diubah.`);
