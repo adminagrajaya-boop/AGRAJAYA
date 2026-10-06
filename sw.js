@@ -1,4 +1,4 @@
-const CACHE_NAME = 'agra-jaya-pos-shell-v3.7';
+const CACHE_NAME = 'agra-jaya-pos-shell-v3.8';
 const STATIC_SHELL_ASSETS = [
     './',
     './index.html',

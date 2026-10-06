@@ -3537,8 +3537,8 @@
 
     <!-- ALPINE.JS APPLICATION LOGIC -->
     <script>
-        // PWA Service Worker & Stale Cache Invalidation (v3.7)
-        const CURRENT_APP_VERSION = 'v3.7';
+        // PWA Service Worker & Stale Cache Invalidation (v3.8)
+        const CURRENT_APP_VERSION = 'v3.8';
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', async () => {
                 try {
@@ -3800,12 +3800,9 @@
                         const sessionUser = this.session?.user;
                         const userEmail = (sessionUser?.email || '').toLowerCase().trim();
 
-                        const isOwnerAccount = (userEmail === 'arvendy.00581602@gmail.com' || userId === '0041f669-01f0-4278-bad1-98244f0f362b');
-                        const isAdminAccount = (userEmail === 'admin.agrajaya@gmail.com');
-
                         if (error || !data) {
                             console.warn("Profile lookup fallback for userId:", userId, userEmail, error);
-                            if (isOwnerAccount) {
+                            if (userEmail === 'arvendy.00581602@gmail.com' || userId === '0041f669-01f0-4278-bad1-98244f0f362b') {
                                 data = {
                                     id: userId,
                                     username: 'arvendy.00581602',
@@ -3813,7 +3810,7 @@
                                     role: 'owner',
                                     is_active: true
                                 };
-                            } else if (isAdminAccount) {
+                            } else if (userEmail === 'admin.agrajaya@gmail.com' || userId === 'eb2fd85f-8c7f-4ce7-98ca-960b701bd7de') {
                                 data = {
                                     id: userId,
                                     username: 'admin.agrajaya',
@@ -3825,17 +3822,9 @@
                                 await this.logout("Profil pengguna tidak ditemukan dalam database.");
                                 return;
                             }
-                        } else {
-                            // Enforce runtime system role mapping for the two official system accounts
-                            if (isOwnerAccount) {
-                                data.role = 'owner';
-                                if (!data.full_name || data.full_name === 'Kasir Utama') data.full_name = 'Dymas Danang';
-                            } else if (isAdminAccount) {
-                                data.role = 'admin';
-                                if (!data.full_name) data.full_name = 'Admin Agra Jaya';
-                            }
                         }
-                        console.log('[Auth] User profile loaded:', { id: data?.id, email: userEmail, role: data?.role, full_name: data?.full_name });
+
+                        console.log('[Auth] User profile loaded from DB:', { id: data?.id, email: userEmail, role: data?.role, full_name: data?.full_name });
 
                         if (data.is_active === false) {
                             await this.logout("Akun Anda telah nonaktif. Hubungi Administrator.");
