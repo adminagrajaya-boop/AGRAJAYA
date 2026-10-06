@@ -3537,15 +3537,38 @@
 
     <!-- ALPINE.JS APPLICATION LOGIC -->
     <script>
-        // PWA Service Worker Registration
+        // PWA Service Worker & Stale Cache Invalidation (v3.7)
+        const CURRENT_APP_VERSION = 'v3.7';
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                    .then((reg) => {
-                        console.log('[PWA] Service Worker registered with scope:', reg.scope);
-                        reg.update();
-                    })
-                    .catch((err) => console.warn('[PWA] Service Worker registration failed:', err));
+            window.addEventListener('load', async () => {
+                try {
+                    const lastVersion = localStorage.getItem('agra_app_version');
+                    if (lastVersion !== CURRENT_APP_VERSION) {
+                        console.log('[PWA] Updating app version to ' + CURRENT_APP_VERSION + ', invalidating stale caches...');
+                        localStorage.setItem('agra_app_version', CURRENT_APP_VERSION);
+                        if ('caches' in window) {
+                            const cacheKeys = await caches.keys();
+                            await Promise.all(
+                                cacheKeys.map(key => {
+                                    if (key !== 'agra-jaya-pos-shell-' + CURRENT_APP_VERSION) {
+                                        console.log('[PWA] Purging stale cache:', key);
+                                        return caches.delete(key);
+                                    }
+                                })
+                            );
+                        }
+                        const registrations = await navigator.serviceWorker.getRegistrations();
+                        for (let reg of registrations) {
+                            await reg.unregister();
+                            console.log('[PWA] Unregistered stale Service Worker');
+                        }
+                    }
+                    const reg = await navigator.serviceWorker.register('./sw.js');
+                    console.log('[PWA] Service Worker registered with scope:', reg.scope);
+                    reg.update();
+                } catch (err) {
+                    console.warn('[PWA] Service Worker update notice:', err);
+                }
             });
         }
 
@@ -3803,13 +3826,14 @@
                                 return;
                             }
                         } else {
-                            // Respect the role column stored in the database profile record if present
-                            if (!data.role || data.role.trim() === '') {
-                                if (isOwnerAccount) data.role = 'owner';
-                                else if (isAdminAccount) data.role = 'admin';
+                            // Enforce runtime system role mapping for the two official system accounts
+                            if (isOwnerAccount) {
+                                data.role = 'owner';
+                                if (!data.full_name || data.full_name === 'Kasir Utama') data.full_name = 'Dymas Danang';
+                            } else if (isAdminAccount) {
+                                data.role = 'admin';
+                                if (!data.full_name) data.full_name = 'Admin Agra Jaya';
                             }
-                            if (isOwnerAccount && !data.full_name) data.full_name = 'Dymas Danang';
-                            if (isAdminAccount && !data.full_name) data.full_name = 'Admin Agra Jaya';
                         }
                         console.log('[Auth] User profile loaded:', { id: data?.id, email: userEmail, role: data?.role, full_name: data?.full_name });
 
