@@ -38,6 +38,7 @@ ehthumbs_vista.db
 .agents/
 
 # Local Scratch & Backup Folders
+scratch/
 backup/
 *.bak
 *.backup
