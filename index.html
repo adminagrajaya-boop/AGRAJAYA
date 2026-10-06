@@ -686,29 +686,41 @@
                                                         'bg-emerald-100 text-emerald-800': qt.status === 'Approved' || qt.status === 'Deal',
                                                         'bg-blue-100 text-blue-800': qt.status === 'Converted' || qt.status === 'Invoiced',
                                                         'bg-rose-100 text-rose-800': qt.status === 'Rejected' || qt.status === 'Expired'
-                                                    }" x-text="qt.status === 'Approved' || qt.status === 'Deal' ? 'DEAL / APPROVED' : (qt.status === 'Converted' || qt.status === 'Invoiced' ? 'SUDAH JADI INVOICE' : qt.status)"></span>
+                                                    }"
+                                                    x-text="qt.status === 'Approved' || qt.status === 'Deal' ? 'DEAL / APPROVED' : (qt.status === 'Converted' || qt.status === 'Invoiced' ? 'SUDAH JADI INVOICE' : qt.status)"></span>
                                             </td>
                                             <td class="p-3 text-center space-x-1">
                                                 <!-- Cetak PDF Penawaran -->
                                                 <button @click="printQuotationPdf(qt)"
-                                                    class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] rounded-lg border transition-all" title="Cetak / Simpan PDF">
+                                                    class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] rounded-lg border transition-all"
+                                                    title="Cetak / Simpan PDF">
                                                     <i class="fa-solid fa-file-pdf text-rose-600 mr-1"></i> PDF
                                                 </button>
                                                 <!-- Share PDF Penawaran -->
                                                 <button @click="shareQuotationPdf(qt)"
-                                                    class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] rounded-lg border transition-all" title="Bagikan PDF">
+                                                    class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] rounded-lg border transition-all"
+                                                    title="Bagikan PDF">
                                                     <i class="fa-solid fa-share-nodes text-brand-600"></i>
                                                 </button>
                                                 <!-- Edit Penawaran (Jika belum jadi invoice) -->
                                                 <button x-show="qt.status !== 'Converted' && qt.status !== 'Invoiced'"
                                                     @click="editQuotation(qt)"
-                                                    class="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white font-bold text-[11px] rounded-lg shadow transition-all" title="Edit Penawaran">
+                                                    class="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white font-bold text-[11px] rounded-lg shadow transition-all"
+                                                    title="Edit Penawaran">
                                                     <i class="fa-solid fa-pen-to-square mr-1"></i> Edit
+                                                </button>
+                                                <!-- Hapus Penawaran -->
+                                                <button x-show="qt.status !== 'Converted' && qt.status !== 'Invoiced'"
+                                                    @click="deleteQuotation(qt)"
+                                                    class="px-2.5 py-1 bg-rose-500 hover:bg-rose-600 text-white font-bold text-[11px] rounded-lg shadow transition-all"
+                                                    title="Hapus Penawaran">
+                                                    <i class="fa-solid fa-trash mr-1"></i> Hapus
                                                 </button>
                                                 <!-- Tandai Setuju / Deal -->
                                                 <button x-show="qt.status === 'Draft' || qt.status === 'Sent'"
                                                     @click="approveQuotation(qt)"
-                                                    class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-lg shadow transition-all" title="Tandai Setuju / Deal">
+                                                    class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-lg shadow transition-all"
+                                                    title="Tandai Setuju / Deal">
                                                     <i class="fa-solid fa-handshake mr-1"></i> SETUJUI / DEAL
                                                 </button>
                                                 <!-- Jadikan Invoice (HANYA jika status APPROVED / DEAL) -->
@@ -819,6 +831,13 @@
                                                     title="Tandai Invoice LUNAS (Non-Piutang / Cash)">
                                                     <i class="fa-solid fa-check-double mr-1"></i>
                                                     <span>Tandai Cash</span>
+                                                </button>
+                                                <button x-show="inv.status !== 'Void' && inv.status !== 'Dibatalkan'"
+                                                    @click="promptCancelInvoice(inv)"
+                                                    class="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-bold text-[10px] rounded-lg transition-all"
+                                                    title="Batalkan Invoice (Void)">
+                                                    <i class="fa-solid fa-ban mr-1"></i>
+                                                    <span>Batalkan</span>
                                                 </button>
                                             </td>
                                         </tr>
@@ -1489,7 +1508,8 @@
                                 </div>
                                 <button @click="loadAccountingDataFromSupabase()" :disabled="accountingLoading"
                                     class="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-sm transition-all shrink-0">
-                                    <i class="fa-solid fa-arrows-rotate" :class="accountingLoading ? 'fa-spin' : ''"></i>
+                                    <i class="fa-solid fa-arrows-rotate"
+                                        :class="accountingLoading ? 'fa-spin' : ''"></i>
                                     <span>Coba Lagi (Retry)</span>
                                 </button>
                             </div>
@@ -1731,7 +1751,8 @@
                                                 </tr>
                                             </thead>
                                             <tbody class="divide-y divide-slate-100 font-medium">
-                                                <template x-if="filteredCOA.length === 0 && !accountingLoading && !accountingError">
+                                                <template
+                                                    x-if="filteredCOA.length === 0 && !accountingLoading && !accountingError">
                                                     <tr>
                                                         <td colspan="7" class="p-6 text-center text-slate-400 italic">
                                                             Tidak ada akun COA yang sesuai dengan kriteria pencarian.
@@ -1740,8 +1761,10 @@
                                                 </template>
                                                 <template x-if="filteredCOA.length === 0 && accountingError">
                                                     <tr>
-                                                        <td colspan="7" class="p-6 text-center text-rose-500 font-medium">
-                                                            <i class="fa-solid fa-circle-exclamation mr-1"></i> Gagal memuat data akun COA. Silakan klik tombol Coba Lagi di atas.
+                                                        <td colspan="7"
+                                                            class="p-6 text-center text-rose-500 font-medium">
+                                                            <i class="fa-solid fa-circle-exclamation mr-1"></i> Gagal
+                                                            memuat data akun COA. Silakan klik tombol Coba Lagi di atas.
                                                         </td>
                                                     </tr>
                                                 </template>
@@ -1815,16 +1838,20 @@
 
                                 <!-- Cards List of Payment Accounts -->
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    <template x-if="accountingPaymentAccounts.length === 0 && !accountingLoading && !accountingError">
-                                        <div class="col-span-full bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center text-slate-400 text-xs italic">
+                                    <template
+                                        x-if="accountingPaymentAccounts.length === 0 && !accountingLoading && !accountingError">
+                                        <div
+                                            class="col-span-full bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center text-slate-400 text-xs italic">
                                             Belum ada akun kas atau rekening bank yang terdaftar.
                                         </div>
                                     </template>
                                     <template x-if="accountingPaymentAccounts.length === 0 && accountingError">
-                                        <div class="col-span-full bg-rose-50 border border-rose-200 rounded-2xl p-6 text-center text-rose-600 text-xs">
+                                        <div
+                                            class="col-span-full bg-rose-50 border border-rose-200 rounded-2xl p-6 text-center text-rose-600 text-xs">
                                             <i class="fa-solid fa-circle-exclamation text-base mb-1"></i>
                                             <p class="font-bold">Gagal memuat akun kas & bank.</p>
-                                            <p class="text-rose-500 mt-1">Silakan coba muat ulang dengan tombol Coba Lagi di atas.</p>
+                                            <p class="text-rose-500 mt-1">Silakan coba muat ulang dengan tombol Coba
+                                                Lagi di atas.</p>
                                         </div>
                                     </template>
                                     <template x-for="acc in accountingPaymentAccounts" :key="acc.id">
@@ -1911,7 +1938,8 @@
                                                 </tr>
                                             </thead>
                                             <tbody class="divide-y divide-slate-100 font-medium">
-                                                <template x-if="accountingExpenses.length === 0 && !accountingLoading && !accountingError">
+                                                <template
+                                                    x-if="accountingExpenses.length === 0 && !accountingLoading && !accountingError">
                                                     <tr>
                                                         <td colspan="8" class="p-6 text-center text-slate-400 italic">
                                                             Belum ada catatan beban operasional yang tersimpan.</td>
@@ -1919,8 +1947,11 @@
                                                 </template>
                                                 <template x-if="accountingExpenses.length === 0 && accountingError">
                                                     <tr>
-                                                        <td colspan="8" class="p-6 text-center text-rose-500 font-medium">
-                                                            <i class="fa-solid fa-circle-exclamation mr-1"></i> Gagal memuat daftar beban. Silakan klik tombol Coba Lagi di atas.</td>
+                                                        <td colspan="8"
+                                                            class="p-6 text-center text-rose-500 font-medium">
+                                                            <i class="fa-solid fa-circle-exclamation mr-1"></i> Gagal
+                                                            memuat daftar beban. Silakan klik tombol Coba Lagi di atas.
+                                                        </td>
                                                     </tr>
                                                 </template>
                                                 <template x-for="item in accountingExpenses" :key="item.id">
@@ -1993,7 +2024,8 @@
                                                 </tr>
                                             </thead>
                                             <tbody class="divide-y divide-slate-100 font-medium">
-                                                <template x-if="accountingEquity.length === 0 && !accountingLoading && !accountingError">
+                                                <template
+                                                    x-if="accountingEquity.length === 0 && !accountingLoading && !accountingError">
                                                     <tr>
                                                         <td colspan="8" class="p-6 text-center text-slate-400 italic">
                                                             Belum ada transaksi modal atau prive yang tercatat.</td>
@@ -2001,8 +2033,12 @@
                                                 </template>
                                                 <template x-if="accountingEquity.length === 0 && accountingError">
                                                     <tr>
-                                                        <td colspan="8" class="p-6 text-center text-rose-500 font-medium">
-                                                            <i class="fa-solid fa-circle-exclamation mr-1"></i> Gagal memuat riwayat ekuitas. Silakan klik tombol Coba Lagi di atas.</td>
+                                                        <td colspan="8"
+                                                            class="p-6 text-center text-rose-500 font-medium">
+                                                            <i class="fa-solid fa-circle-exclamation mr-1"></i> Gagal
+                                                            memuat riwayat ekuitas. Silakan klik tombol Coba Lagi di
+                                                            atas.
+                                                        </td>
                                                     </tr>
                                                 </template>
                                                 <template x-for="item in accountingEquity" :key="item.id">
@@ -2076,8 +2112,10 @@
                                                     <th class="p-3 text-center">Rincian Baris</th>
                                                 </tr>
                                             </thead>
-                                            <tbody class="divide-y divide-slate-100 font-medium" x-show="accountingJournals.length === 0">
-                                                <template x-if="accountingJournals.length === 0 && !accountingLoading && !accountingError">
+                                            <tbody class="divide-y divide-slate-100 font-medium"
+                                                x-show="accountingJournals.length === 0">
+                                                <template
+                                                    x-if="accountingJournals.length === 0 && !accountingLoading && !accountingError">
                                                     <tr>
                                                         <td colspan="8" class="p-8 text-center text-slate-400 italic">
                                                             Belum ada jurnal umum yang diposting ke database.</td>
@@ -2085,13 +2123,17 @@
                                                 </template>
                                                 <template x-if="accountingJournals.length === 0 && accountingError">
                                                     <tr>
-                                                        <td colspan="8" class="p-8 text-center text-rose-500 font-medium">
-                                                            <i class="fa-solid fa-circle-exclamation mr-1"></i> Gagal memuat jurnal umum. Silakan klik tombol Coba Lagi di atas.</td>
+                                                        <td colspan="8"
+                                                            class="p-8 text-center text-rose-500 font-medium">
+                                                            <i class="fa-solid fa-circle-exclamation mr-1"></i> Gagal
+                                                            memuat jurnal umum. Silakan klik tombol Coba Lagi di atas.
+                                                        </td>
                                                     </tr>
                                                 </template>
                                             </tbody>
                                             <template x-for="jrn in accountingJournals" :key="jrn.id">
-                                                <tbody class="divide-y divide-slate-100 font-medium border-b border-slate-200/60">
+                                                <tbody
+                                                    class="divide-y divide-slate-100 font-medium border-b border-slate-200/60">
                                                     <tr class="hover:bg-slate-50/80 transition-colors">
                                                         <td class="p-3 font-mono font-bold text-slate-800"
                                                             x-text="jrn.journal_no"></td>
@@ -2125,54 +2167,55 @@
                                                     </tr>
 
                                                     <!-- Accordion Line Details -->
-                                                    <tr x-show="expandedJournalId === jrn.id" x-cloak class="bg-slate-50/90 border-y border-slate-200">
-                                                            <td colspan="8" class="p-3 pl-8">
-                                                                <div
-                                                                    class="bg-white rounded-xl border border-slate-200 p-3 space-y-2">
-                                                                    <p class="font-bold text-slate-700 text-[11px]">
-                                                                        Rincian Baris Jurnal (Double-Entry Lines):</p>
-                                                                    <table class="w-full text-xs">
-                                                                        <thead>
-                                                                            <tr
-                                                                                class="text-slate-400 font-bold border-b border-slate-100 text-[10px]">
-                                                                                <th class="py-1 text-left">Kode Akun
-                                                                                </th>
-                                                                                <th class="py-1 text-left">Nama Akun
-                                                                                </th>
-                                                                                <th class="py-1 text-left">Keterangan
-                                                                                </th>
-                                                                                <th class="py-1 text-right">Debit</th>
-                                                                                <th class="py-1 text-right">Kredit</th>
+                                                    <tr x-show="expandedJournalId === jrn.id" x-cloak
+                                                        class="bg-slate-50/90 border-y border-slate-200">
+                                                        <td colspan="8" class="p-3 pl-8">
+                                                            <div
+                                                                class="bg-white rounded-xl border border-slate-200 p-3 space-y-2">
+                                                                <p class="font-bold text-slate-700 text-[11px]">
+                                                                    Rincian Baris Jurnal (Double-Entry Lines):</p>
+                                                                <table class="w-full text-xs">
+                                                                    <thead>
+                                                                        <tr
+                                                                            class="text-slate-400 font-bold border-b border-slate-100 text-[10px]">
+                                                                            <th class="py-1 text-left">Kode Akun
+                                                                            </th>
+                                                                            <th class="py-1 text-left">Nama Akun
+                                                                            </th>
+                                                                            <th class="py-1 text-left">Keterangan
+                                                                            </th>
+                                                                            <th class="py-1 text-right">Debit</th>
+                                                                            <th class="py-1 text-right">Kredit</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody
+                                                                        class="divide-y divide-slate-100 font-medium">
+                                                                        <template
+                                                                            x-for="line in (jrn.journal_lines || [])"
+                                                                            :key="line.id">
+                                                                            <tr>
+                                                                                <td class="py-1.5 font-mono text-slate-700 font-semibold"
+                                                                                    x-text="line.chart_of_accounts ? line.chart_of_accounts.code : '-'">
+                                                                                </td>
+                                                                                <td class="py-1.5 text-slate-800 font-semibold"
+                                                                                    x-text="line.chart_of_accounts ? line.chart_of_accounts.name : '-'">
+                                                                                </td>
+                                                                                <td class="py-1.5 text-slate-500 text-[11px]"
+                                                                                    x-text="line.description || '-'">
+                                                                                </td>
+                                                                                <td class="py-1.5 font-mono text-right text-slate-800"
+                                                                                    x-text="Number(line.debit) > 0 ? formatRupiah(line.debit) : '-'">
+                                                                                </td>
+                                                                                <td class="py-1.5 font-mono text-right text-slate-800"
+                                                                                    x-text="Number(line.credit) > 0 ? formatRupiah(line.credit) : '-'">
+                                                                                </td>
                                                                             </tr>
-                                                                        </thead>
-                                                                        <tbody
-                                                                            class="divide-y divide-slate-100 font-medium">
-                                                                            <template
-                                                                                x-for="line in (jrn.journal_lines || [])"
-                                                                                :key="line.id">
-                                                                                <tr>
-                                                                                    <td class="py-1.5 font-mono text-slate-700 font-semibold"
-                                                                                        x-text="line.chart_of_accounts ? line.chart_of_accounts.code : '-'">
-                                                                                    </td>
-                                                                                    <td class="py-1.5 text-slate-800 font-semibold"
-                                                                                        x-text="line.chart_of_accounts ? line.chart_of_accounts.name : '-'">
-                                                                                    </td>
-                                                                                    <td class="py-1.5 text-slate-500 text-[11px]"
-                                                                                        x-text="line.description || '-'">
-                                                                                    </td>
-                                                                                    <td class="py-1.5 font-mono text-right text-slate-800"
-                                                                                        x-text="Number(line.debit) > 0 ? formatRupiah(line.debit) : '-'">
-                                                                                    </td>
-                                                                                    <td class="py-1.5 font-mono text-right text-slate-800"
-                                                                                        x-text="Number(line.credit) > 0 ? formatRupiah(line.credit) : '-'">
-                                                                                    </td>
-                                                                                </tr>
-                                                                            </template>
-                                                                        </tbody>
-                                                                    </table>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
+                                                                        </template>
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
                                                 </tbody>
                                             </template>
                                         </table>
@@ -2342,7 +2385,8 @@
                                                 </div>
                                                 <div
                                                     class="pt-3 border-t-2 border-slate-800 flex justify-between font-black text-sm">
-                                                    <span class="text-slate-900 uppercase tracking-wider">TOTAL ASET</span>
+                                                    <span class="text-slate-900 uppercase tracking-wider">TOTAL
+                                                        ASET</span>
                                                     <span class="font-mono text-brand-600"
                                                         x-text="formatRupiah(accountingDashboardStats.saldoKas + accountingDashboardStats.saldoBank + accountingDashboardStats.saldoQris + accountingDashboardStats.saldoPiutang + getAccountBalanceByCode('1-1210', 'DEBIT'))"></span>
                                                 </div>
@@ -2404,7 +2448,8 @@
 
                                         <div
                                             class="pt-3 border-t-2 border-slate-800 flex justify-between font-black text-sm">
-                                            <span class="text-slate-900 uppercase tracking-wider">TOTAL KEWAJIBAN & EKUITAS</span>
+                                            <span class="text-slate-900 uppercase tracking-wider">TOTAL KEWAJIBAN &
+                                                EKUITAS</span>
                                             <span class="font-mono text-brand-600"
                                                 x-text="formatRupiah((accountingDashboardStats.saldoHutang + getAccountBalanceByCode('2-1120', 'CREDIT')) + (getAccountBalanceByCode('3-1110', 'CREDIT') - getAccountBalanceByCode('3-1120', 'DEBIT') + accountingDashboardStats.labaRugi))"></span>
                                         </div>
@@ -2574,8 +2619,10 @@
 
                 <template x-if="convertQtData">
                     <div class="bg-slate-50 p-3 rounded-2xl border border-slate-200/80 space-y-0.5 text-center">
-                        <p class="text-[11px] text-slate-400">Penawaran: <span class="font-bold text-slate-700" x-text="convertQtData?.qtNo"></span></p>
-                        <p class="font-extrabold text-xl text-brand-600" x-text="formatRupiah(convertQtData?.total || 0)"></p>
+                        <p class="text-[11px] text-slate-400">Penawaran: <span class="font-bold text-slate-700"
+                                x-text="convertQtData?.qtNo"></span></p>
+                        <p class="font-extrabold text-xl text-brand-600"
+                            x-text="formatRupiah(convertQtData?.total || 0)"></p>
                         <p class="text-[11px] text-slate-500 font-medium" x-text="convertQtData?.customerName"></p>
                     </div>
                 </template>
@@ -2603,13 +2650,18 @@
                 <!-- Input Opsi Cash -->
                 <div x-show="convertPaymentMethod === 'Tunai'" class="space-y-2">
                     <label class="block text-xs font-bold text-slate-700">Akun Kas / Bank Penerimaan</label>
-                    <select x-model="convertPaymentAccountId" class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl">
-                        <template x-for="acc in (accountingAccounts || []).filter(a => a.type === 'Kas' || a.type === 'Bank' || a.type === 'Kas/Bank')" :key="acc.id">
+                    <select x-model="convertPaymentAccountId"
+                        class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl">
+                        <template
+                            x-for="acc in (accountingAccounts || []).filter(a => a.type === 'Kas' || a.type === 'Bank' || a.type === 'Kas/Bank')"
+                            :key="acc.id">
                             <option :value="acc.id" x-text="acc.name + ' (' + acc.code + ')'"></option>
                         </template>
                     </select>
-                    <div class="text-[11px] text-emerald-700 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200/80">
-                        <i class="fa-solid fa-info-circle mr-1"></i> Invoice diterbitkan berstatus <strong>LUNAS</strong>. Tanpa jatuh tempo 30 hari & tanpa piutang.
+                    <div
+                        class="text-[11px] text-emerald-700 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200/80">
+                        <i class="fa-solid fa-info-circle mr-1"></i> Invoice diterbitkan berstatus
+                        <strong>LUNAS</strong>. Tanpa jatuh tempo 30 hari & tanpa piutang.
                     </div>
                 </div>
 
@@ -2622,18 +2674,26 @@
                                 class="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl">
                         </div>
                         <div>
-                            <label class="block text-[11px] font-bold text-slate-700 mb-1">Jatuh Tempo (Opsional)</label>
+                            <label class="block text-[11px] font-bold text-slate-700 mb-1">Jatuh Tempo
+                                (Opsional)</label>
                             <input type="text" x-model="convertDueDate" placeholder="Kosong / misal: 30 Hari"
                                 class="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl">
                             <div class="flex gap-1 mt-1">
-                                <button type="button" @click="convertDueDate = '30 Hari'" class="text-[9px] bg-slate-200 hover:bg-slate-300 px-1.5 py-0.5 rounded font-semibold text-slate-700">+ 30 Hari</button>
-                                <button type="button" @click="convertDueDate = '14 Hari'" class="text-[9px] bg-slate-200 hover:bg-slate-300 px-1.5 py-0.5 rounded font-semibold text-slate-700">+ 14 Hari</button>
-                                <button type="button" @click="convertDueDate = ''" class="text-[9px] bg-slate-200 hover:bg-slate-300 px-1.5 py-0.5 rounded font-semibold text-slate-700">Kosongkan</button>
+                                <button type="button" @click="convertDueDate = '30 Hari'"
+                                    class="text-[9px] bg-slate-200 hover:bg-slate-300 px-1.5 py-0.5 rounded font-semibold text-slate-700">+
+                                    30 Hari</button>
+                                <button type="button" @click="convertDueDate = '14 Hari'"
+                                    class="text-[9px] bg-slate-200 hover:bg-slate-300 px-1.5 py-0.5 rounded font-semibold text-slate-700">+
+                                    14 Hari</button>
+                                <button type="button" @click="convertDueDate = ''"
+                                    class="text-[9px] bg-slate-200 hover:bg-slate-300 px-1.5 py-0.5 rounded font-semibold text-slate-700">Kosongkan</button>
                             </div>
                         </div>
                     </div>
                     <div class="text-[11px] text-amber-800 bg-amber-50 p-2.5 rounded-xl border border-amber-200/80">
-                        <i class="fa-solid fa-triangle-exclamation mr-1"></i> Invoice dicatat sebagai <strong>Piutang Tempo</strong> <span x-show="convertDueDate">dengan jatuh tempo <strong x-text="convertDueDate"></strong></span>.
+                        <i class="fa-solid fa-triangle-exclamation mr-1"></i> Invoice dicatat sebagai <strong>Piutang
+                            Tempo</strong> <span x-show="convertDueDate">dengan jatuh tempo <strong
+                                x-text="convertDueDate"></strong></span>.
                     </div>
                 </div>
 
@@ -2650,7 +2710,9 @@
             class="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
             <div class="bg-white rounded-3xl max-w-2xl w-full p-5 space-y-3 shadow-2xl max-h-[90vh] overflow-y-auto">
                 <div class="flex justify-between items-center pb-2 border-b border-slate-100">
-                    <h3 class="font-bold text-slate-800 text-sm" x-text="editingQtId ? 'Edit Penawaran Harga (' + (newQt.qtNo || '') + ')' : 'Buat Penawaran Harga Baru'"></h3>
+                    <h3 class="font-bold text-slate-800 text-sm"
+                        x-text="editingQtId ? 'Edit Penawaran Harga (' + (newQt.qtNo || '') + ')' : 'Buat Penawaran Harga Baru'">
+                    </h3>
                     <button @click="showAddQuotationModal = false" class="text-slate-400"><i
                             class="fa-solid fa-xmark text-base"></i></button>
                 </div>
@@ -2705,26 +2767,31 @@
                             <div class="bg-white p-2.5 rounded-xl border text-[11px] space-y-1.5 shadow-sm">
                                 <div class="flex items-center justify-between font-bold text-slate-800">
                                     <span class="truncate flex-1" x-text="(idx + 1) + '. ' + item.name"></span>
-                                    <button @click="newQt.items.splice(idx, 1)" class="text-rose-500 hover:text-rose-700 px-1 text-xs" title="Hapus Item">
+                                    <button @click="newQt.items.splice(idx, 1)"
+                                        class="text-rose-500 hover:text-rose-700 px-1 text-xs" title="Hapus Item">
                                         <i class="fa-solid fa-trash"></i>
                                     </button>
                                 </div>
                                 <div class="grid grid-cols-12 gap-2 items-center">
                                     <div class="col-span-3">
-                                        <label class="block text-[10px] text-slate-500 font-semibold mb-0.5">Qty & Satuan</label>
+                                        <label class="block text-[10px] text-slate-500 font-semibold mb-0.5">Qty &
+                                            Satuan</label>
                                         <div class="flex items-center gap-1">
                                             <input type="number" min="1" x-model.number="item.qty"
                                                 class="w-full text-center border rounded-lg px-1 py-1 font-bold">
-                                            <span class="text-[10px] text-slate-400" x-text="item.unit || 'Unit'"></span>
+                                            <span class="text-[10px] text-slate-400"
+                                                x-text="item.unit || 'Unit'"></span>
                                         </div>
                                     </div>
                                     <div class="col-span-3">
-                                        <label class="block text-[10px] text-slate-500 font-semibold mb-0.5">Harga Satuan (Rp)</label>
+                                        <label class="block text-[10px] text-slate-500 font-semibold mb-0.5">Harga
+                                            Satuan (Rp)</label>
                                         <input type="number" min="0" x-model.number="item.price"
                                             class="w-full text-right border rounded-lg px-1.5 py-1 font-semibold">
                                     </div>
                                     <div class="col-span-3">
-                                        <label class="block text-[10px] text-slate-500 font-semibold mb-0.5">Diskon Item</label>
+                                        <label class="block text-[10px] text-slate-500 font-semibold mb-0.5">Diskon
+                                            Item</label>
                                         <div class="flex items-center gap-1">
                                             <select x-model="item.discountType"
                                                 class="text-[10px] border rounded-lg px-1 py-1 bg-slate-50">
@@ -2732,29 +2799,35 @@
                                                 <option value="percent">% (Persen)</option>
                                                 <option value="nominal">Rp (Nominal)</option>
                                             </select>
-                                            <input x-show="item.discountType !== 'none'" type="number" min="0" x-model.number="item.discountValue"
+                                            <input x-show="item.discountType !== 'none'" type="number" min="0"
+                                                x-model.number="item.discountValue"
                                                 :placeholder="item.discountType === 'percent' ? '%' : 'Rp'"
                                                 class="w-full text-right border rounded-lg px-1 py-1 text-[10px] font-semibold">
                                         </div>
                                     </div>
                                     <div class="col-span-3 text-right">
-                                        <label class="block text-[10px] text-slate-500 font-semibold mb-0.5">Subtotal Net</label>
+                                        <label class="block text-[10px] text-slate-500 font-semibold mb-0.5">Subtotal
+                                            Net</label>
                                         <span class="font-bold text-brand-600 block text-xs"
                                             x-text="formatRupiah(getItemNetSubtotal(item))"></span>
-                                        <span x-show="getItemDiscountAmount(item) > 0" class="block text-[9px] text-emerald-600 font-medium"
+                                        <span x-show="getItemDiscountAmount(item) > 0"
+                                            class="block text-[9px] text-emerald-600 font-medium"
                                             x-text="'Diskon: -' + formatRupiah(getItemDiscountAmount(item))"></span>
                                     </div>
                                 </div>
                             </div>
                         </template>
-                        <div x-show="!newQt.items || newQt.items.length === 0" class="text-center py-4 text-slate-400 text-xs italic">
+                        <div x-show="!newQt.items || newQt.items.length === 0"
+                            class="text-center py-4 text-slate-400 text-xs italic">
                             Belum ada item penawaran. Pilih barang/jasa di atas.
                         </div>
                     </div>
 
                     <div>
-                        <label class="block font-bold text-slate-700 mb-1">Catatan / Ketentuan Penawaran (Opsional)</label>
-                        <textarea x-model="newQt.notes" rows="2" placeholder="misal: Harga belum termasuk ongkos kirim dan jasa garansi 1 tahun."
+                        <label class="block font-bold text-slate-700 mb-1">Catatan / Ketentuan Penawaran
+                            (Opsional)</label>
+                        <textarea x-model="newQt.notes" rows="2"
+                            placeholder="misal: Harga belum termasuk ongkos kirim dan jasa garansi 1 tahun."
                             class="w-full px-2.5 py-1.5 bg-slate-50 border rounded-xl"></textarea>
                     </div>
 
@@ -2764,7 +2837,8 @@
                             <span>Subtotal Kotor:</span>
                             <span class="font-semibold" x-text="formatRupiah(calculateQtSubtotal())"></span>
                         </div>
-                        <div class="flex justify-between items-center text-emerald-400" x-show="calculateQtDiscountTotal() > 0">
+                        <div class="flex justify-between items-center text-emerald-400"
+                            x-show="calculateQtDiscountTotal() > 0">
                             <span>Total Diskon Penawaran:</span>
                             <span class="font-semibold" x-text="'- ' + formatRupiah(calculateQtDiscountTotal())"></span>
                         </div>
@@ -5140,6 +5214,44 @@
                     this.selectedQtProductId = '';
                 },
 
+                async deleteQuotation(qt) {
+                    if (!qt) return;
+                    if (qt.status === 'Converted' || qt.status === 'Invoiced') {
+                        alert(`Penawaran ${qt.qtNo || ''} sudah digunakan untuk Invoice dan tidak dapat dihapus. Silakan proses atau batalkan Invoice terlebih dahulu.`);
+                        return;
+                    }
+
+                    const confirmDel = confirm(`Yakin menghapus Penawaran ${qt.qtNo}? Data yang sudah dihapus tidak dapat dikembalikan.\n\n(Catatan: Menghapus penawaran ini tidak akan mengubah saldo stok karena penawaran belum memotong stok).`);
+                    if (!confirmDel) return;
+
+                    try {
+                        if (supabaseClient && this.isAuthenticated && qt.id) {
+                            const { error: itemsErr } = await supabaseClient
+                                .from('quotation_items')
+                                .delete()
+                                .eq('quotation_id', qt.id);
+                            
+                            if (itemsErr) throw itemsErr;
+
+                            const { error: qtErr } = await supabaseClient
+                                .from('quotations')
+                                .delete()
+                                .eq('id', qt.id);
+
+                            if (qtErr) throw qtErr;
+                        }
+                    } catch (err) {
+                        console.error('Error deleting quotation:', err);
+                        alert('Gagal menghapus penawaran dari database: ' + (err.message || err));
+                        return;
+                    }
+
+                    this.penawaranList = this.penawaranList.filter(q => q.id !== qt.id);
+                    this.saveDataToStorage();
+                    alert(`Penawaran ${qt.qtNo} berhasil dihapus.`);
+                },
+
+
                 getItemGrossSubtotal(item) {
                     if (!item) return 0;
                     const q = Math.max(0, Number(item.qty) || 0);
@@ -5228,7 +5340,7 @@
                         }
 
                         const grossSubtotal = Math.round((qty * price) * 100) / 100;
-                        
+
                         let discType = item.discountType || 'none';
                         let discVal = Number(item.discountValue) || 0;
                         let discAmt = 0;
@@ -5888,6 +6000,9 @@
                     };
 
                     this.invoiceList.unshift(inv);
+                    this.saveDataToStorage();
+                    
+                    // ... (rest of function continues) ...
 
                     if (!isCash && remainingVal > 0) {
                         const existingPiutang = this.piutangList.find(p => p.invNo === invNo);
@@ -5910,12 +6025,105 @@
                     if (typeof this.reloadAccountingData === 'function') {
                         try {
                             await this.reloadAccountingData();
-                        } catch (e) {}
+                        } catch (e) { }
                     }
 
                     this.saveDataToStorage();
                     alert(`Penawaran ${qt.qtNo} berhasil dikonversi menjadi Invoice (${isCash ? 'LUNAS / CASH' : 'KREDIT'}): ${invNo}`);
                     this.currentTab = 'invoice';
+                },
+
+                async promptCancelInvoice(inv) {
+                    if (!inv) return;
+                    if (inv.status === 'Void' || inv.status === 'Dibatalkan') {
+                        alert(`Invoice ${inv.invNo || ''} sudah berstatus Dibatalkan / Void.`);
+                        return;
+                    }
+
+                    const payments = this.paymentHistoryList.filter(p => p.invNo === inv.invNo && p.status !== 'VOID');
+                    if (payments && payments.length > 0) {
+                        alert(`DITOLAK: Invoice ${inv.invNo} memiliki ${payments.length} riwayat pembayaran aktif.\n\nSistem Akuntansi melarang pembatalan invoice yang sudah terbayar (sebagian/lunas) untuk mencegah kerusakan neraca kas.\n\nSolusi: Silakan batalkan (VOID) semua riwayat pembayaran terkait invoice ini terlebih dahulu melalui menu Pembayaran Piutang, baru batalkan Invoicenya.`);
+                        return;
+                    }
+
+                    let warnMsg = `Yakin membatalkan (VOID) Invoice ${inv.invNo}?\n\nPerhatian:\n1. Status Invoice akan menjadi Dibatalkan.\n2. Jurnal akuntansi terkait invoice ini (Piutang & Penjualan) akan dibalikkan (reverse) secara otomatis oleh sistem.\n3. Saldo Piutang (jika ada) akan dihapus.\n4. Quotation asal (jika ada) akan kembali berstatus Approved.`;
+                    
+                    const confirmCancel = confirm(warnMsg);
+                    if (!confirmCancel) return;
+
+                    try {
+                        if (supabaseClient && this.isAuthenticated) {
+                            let journalIdToReverse = null;
+                            const { data: jrnData, error: jrnErr } = await supabaseClient
+                                .from('journal_entries')
+                                .select('id')
+                                .eq('source_type', 'INVOICE')
+                                .eq('source_code', inv.invNo)
+                                .eq('status', 'POSTED')
+                                .eq('is_reversal', false)
+                                .maybeSingle();
+                            
+                            if (jrnErr) console.warn('Could not fetch journal to reverse:', jrnErr);
+                            if (jrnData) journalIdToReverse = jrnData.id;
+
+                            if (journalIdToReverse) {
+                                const { error: rpcErr } = await supabaseClient.rpc('reverse_journal_entry', {
+                                    p_original_journal_id: journalIdToReverse,
+                                    p_user_id: this.currentUser.id,
+                                    p_reversal_reason: `VOID INVOICE ${inv.invNo}`
+                                });
+                                if (rpcErr) {
+                                    console.error('Reverse journal RPC error:', rpcErr);
+                                    alert('Gagal membalikkan jurnal akuntansi: ' + (rpcErr.message || rpcErr));
+                                    return;
+                                }
+                            }
+
+                            const { error: invErr } = await supabaseClient
+                                .from('invoices')
+                                .update({ 
+                                    status: 'Dibatalkan', 
+                                    voided_at: new Date().toISOString(),
+                                    voided_by: this.currentUser.id,
+                                    remaining: 0
+                                })
+                                .eq('id', inv.id || inv.supabaseId);
+                            if (invErr) throw invErr;
+
+                            const { error: recErr } = await supabaseClient
+                                .from('receivables')
+                                .update({ status: 'Dibatalkan', remaining: 0 })
+                                .eq('inv_no', inv.invNo);
+                            if (recErr) console.warn('Warning: failed to update receivables', recErr);
+
+                            if (inv.quotationId) {
+                                const { error: qtUpdErr } = await supabaseClient
+                                    .from('quotations')
+                                    .update({ status: 'Approved' })
+                                    .eq('id', inv.quotationId);
+                                if (qtUpdErr) console.warn('Warning: failed to revert quotation status', qtUpdErr);
+                                
+                                const localQt = this.penawaranList.find(q => q.id === inv.quotationId);
+                                if (localQt) localQt.status = 'Approved';
+                            }
+                        }
+                    } catch (err) {
+                        console.error('Void invoice error:', err);
+                        alert('Gagal membatalkan invoice: ' + (err.message || err));
+                        return;
+                    }
+
+                    inv.status = 'Dibatalkan';
+                    inv.remaining = 0;
+                    this.saveDataToStorage();
+                    
+                    const recIndex = this.piutangList.findIndex(p => p.invNo === inv.invNo);
+                    if (recIndex !== -1) {
+                        this.piutangList[recIndex].status = 'Dibatalkan';
+                        this.piutangList[recIndex].remaining = 0;
+                    }
+
+                    alert(`Invoice ${inv.invNo} berhasil dibatalkan (VOID). Jurnal akuntansi telah direverse secara otomatis.`);
                 },
 
                 async markInvoiceAsCashPaid(inv) {
@@ -5961,13 +6169,13 @@
                     if (!insertedInvId || !supabaseClient) return;
                     try {
                         await supabaseClient.from('receivables').delete().eq('invoice_id', insertedInvId);
-                    } catch (e) {}
+                    } catch (e) { }
                     try {
                         await supabaseClient.from('invoice_items').delete().eq('invoice_id', insertedInvId);
-                    } catch (e) {}
+                    } catch (e) { }
                     try {
                         await supabaseClient.from('invoices').delete().eq('id', insertedInvId);
-                    } catch (e) {}
+                    } catch (e) { }
                 },
 
                 // PURCHASE / PO LOGIC
