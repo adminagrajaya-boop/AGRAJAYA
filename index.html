@@ -3776,7 +3776,7 @@
 
                         const sessionUser = this.session?.user;
                         const isNewOwner = (userId === '0041f669-01f0-4278-bad1-98244f0f362b' || sessionUser?.email === 'arvendy.00581602@gmail.com');
-                        const isOldKasir = (userId === 'eb2fd85f-8c7f-4ce7-98ca-960b701bd7de' || sessionUser?.email === 'admin.agrajaya@gmail.com');
+                        const isOldKasir = (userId === 'eb2fd85f-8c7f-4ce7-98ca-960b701bd7de');
 
                         if (error || !data) {
                             console.warn("Profile lookup fallback for userId:", userId, error);
@@ -3801,16 +3801,15 @@
                                 return;
                             }
                         } else {
-                            if (isNewOwner) {
-                                data.role = 'owner';
-                                data.is_active = true;
-                                if (!data.full_name) data.full_name = 'Dymas Danang';
-                            } else if (isOldKasir) {
-                                data.role = 'kasir';
-                                data.is_active = true;
-                                if (!data.full_name) data.full_name = 'Kasir Utama';
+                            // Respect the role column stored in the database profile record
+                            if (!data.role) {
+                                if (isNewOwner) data.role = 'owner';
+                                else if (isOldKasir) data.role = 'kasir';
                             }
+                            if (isNewOwner && !data.full_name) data.full_name = 'Dymas Danang';
+                            if (isOldKasir && !data.full_name) data.full_name = 'Kasir Utama';
                         }
+                        console.log('[Auth] User profile loaded:', { id: data?.id, role: data?.role, full_name: data?.full_name });
 
                         if (data.is_active === false) {
                             await this.logout("Akun Anda telah nonaktif. Hubungi Administrator.");
@@ -5157,7 +5156,11 @@
 
                 async correctInvoice(inv) {
                     if (!inv) return;
-                    const userRole = (this.currentUser?.role || '').toLowerCase();
+                    if (!this.currentUser || !this.currentUser.role) {
+                        alert('Akses Ditolak: Role pengguna belum tersedia. Silakan muat ulang halaman.');
+                        return;
+                    }
+                    const userRole = (this.currentUser.role || '').toLowerCase().trim();
                     if (userRole !== 'owner' && userRole !== 'admin') {
                         alert('Akses Ditolak: Fitur koreksi invoice hanya untuk Owner / Admin.');
                         return;
@@ -5220,7 +5223,11 @@
 
                 async executeCorrectInvoice() {
                     if (!this.correctingInvoiceObj || !this.newQt || this.isSubmittingCorrection) return;
-                    const userRole = (this.currentUser?.role || '').toLowerCase();
+                    if (!this.currentUser || !this.currentUser.role) {
+                        alert('Akses Ditolak: Role pengguna belum tersedia. Silakan muat ulang halaman.');
+                        return;
+                    }
+                    const userRole = (this.currentUser.role || '').toLowerCase().trim();
                     if (userRole !== 'owner' && userRole !== 'admin') {
                         alert('Akses Ditolak: Fitur koreksi invoice hanya untuk Owner / Admin.');
                         return;
