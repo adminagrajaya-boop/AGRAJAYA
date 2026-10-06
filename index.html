@@ -3775,25 +3775,27 @@
                             .maybeSingle();
 
                         const sessionUser = this.session?.user;
-                        const isNewOwner = (userId === '0041f669-01f0-4278-bad1-98244f0f362b' || sessionUser?.email === 'arvendy.00581602@gmail.com');
-                        const isOldKasir = (userId === 'eb2fd85f-8c7f-4ce7-98ca-960b701bd7de');
+                        const userEmail = (sessionUser?.email || '').toLowerCase().trim();
+
+                        const isOwnerAccount = (userEmail === 'arvendy.00581602@gmail.com' || userId === '0041f669-01f0-4278-bad1-98244f0f362b');
+                        const isAdminAccount = (userEmail === 'admin.agrajaya@gmail.com');
 
                         if (error || !data) {
-                            console.warn("Profile lookup fallback for userId:", userId, error);
-                            if (isNewOwner) {
+                            console.warn("Profile lookup fallback for userId:", userId, userEmail, error);
+                            if (isOwnerAccount) {
                                 data = {
                                     id: userId,
-                                    username: 'admin.agrajaya',
+                                    username: 'arvendy.00581602',
                                     full_name: 'Dymas Danang',
                                     role: 'owner',
                                     is_active: true
                                 };
-                            } else if (isOldKasir) {
+                            } else if (isAdminAccount) {
                                 data = {
                                     id: userId,
                                     username: 'admin.agrajaya',
-                                    full_name: 'Kasir Utama',
-                                    role: 'kasir',
+                                    full_name: 'Admin Agra Jaya',
+                                    role: 'admin',
                                     is_active: true
                                 };
                             } else {
@@ -3801,15 +3803,15 @@
                                 return;
                             }
                         } else {
-                            // Respect the role column stored in the database profile record
-                            if (!data.role) {
-                                if (isNewOwner) data.role = 'owner';
-                                else if (isOldKasir) data.role = 'kasir';
+                            // Respect the role column stored in the database profile record if present
+                            if (!data.role || data.role.trim() === '') {
+                                if (isOwnerAccount) data.role = 'owner';
+                                else if (isAdminAccount) data.role = 'admin';
                             }
-                            if (isNewOwner && !data.full_name) data.full_name = 'Dymas Danang';
-                            if (isOldKasir && !data.full_name) data.full_name = 'Kasir Utama';
+                            if (isOwnerAccount && !data.full_name) data.full_name = 'Dymas Danang';
+                            if (isAdminAccount && !data.full_name) data.full_name = 'Admin Agra Jaya';
                         }
-                        console.log('[Auth] User profile loaded:', { id: data?.id, role: data?.role, full_name: data?.full_name });
+                        console.log('[Auth] User profile loaded:', { id: data?.id, email: userEmail, role: data?.role, full_name: data?.full_name });
 
                         if (data.is_active === false) {
                             await this.logout("Akun Anda telah nonaktif. Hubungi Administrator.");
