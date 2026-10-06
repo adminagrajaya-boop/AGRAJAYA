@@ -2690,20 +2690,9 @@
                                 class="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl">
                         </div>
                         <div>
-                            <label class="block text-[11px] font-bold text-slate-700 mb-1">Jatuh Tempo
-                                (Opsional)</label>
-                            <input type="text" x-model="convertDueDate" placeholder="Kosong / misal: 30 Hari"
+                            <label class="block text-[11px] font-bold text-slate-700 mb-1">Jatuh Tempo (Opsional)</label>
+                            <input type="date" x-model="convertDueDate"
                                 class="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl">
-                            <div class="flex gap-1 mt-1">
-                                <button type="button" @click="convertDueDate = '30 Hari'"
-                                    class="text-[9px] bg-slate-200 hover:bg-slate-300 px-1.5 py-0.5 rounded font-semibold text-slate-700">+
-                                    30 Hari</button>
-                                <button type="button" @click="convertDueDate = '14 Hari'"
-                                    class="text-[9px] bg-slate-200 hover:bg-slate-300 px-1.5 py-0.5 rounded font-semibold text-slate-700">+
-                                    14 Hari</button>
-                                <button type="button" @click="convertDueDate = ''"
-                                    class="text-[9px] bg-slate-200 hover:bg-slate-300 px-1.5 py-0.5 rounded font-semibold text-slate-700">Kosongkan</button>
-                            </div>
                         </div>
                     </div>
                     <div class="text-[11px] text-amber-800 bg-amber-50 p-2.5 rounded-xl border border-amber-200/80">
@@ -5734,7 +5723,7 @@
                     const isTunaiLunas = options.paymentMethod === 'Tunai';
                     const isTunaiBelumLunas = options.paymentMethod === 'TunaiBelumLunas';
                     
-                    const dueDateVal = isTunaiLunas ? '-' : (isTunaiBelumLunas ? null : (options.dueDate && options.dueDate.trim() ? options.dueDate.trim() : null));
+                    const dueDateVal = (!isTunaiLunas && !isTunaiBelumLunas && options.dueDate && options.dueDate.trim()) ? options.dueDate.trim() : null;
                     const dpAmt = isTunaiLunas ? computedNetTotal : (isTunaiBelumLunas ? 0 : Math.max(0, Number(options.dpAmount || 0)));
                     const paidAmtVal = isTunaiLunas ? computedNetTotal : Math.min(computedNetTotal, dpAmt);
                     const remainingVal = Math.max(0, computedNetTotal - paidAmtVal);
@@ -6179,7 +6168,7 @@
                                 status: 'Lunas',
                                 paid_amount: grandTotal,
                                 remaining: 0,
-                                due_date: '-'
+                                due_date: null
                             })
                             .eq('inv_no', inv.invNo);
 
@@ -6193,7 +6182,7 @@
                         inv.status = 'Lunas';
                         inv.paidAmount = grandTotal;
                         inv.remaining = 0;
-                        inv.dueDate = '-';
+                        inv.dueDate = null;
 
                         this.piutangList = this.piutangList.filter(p => p.invNo !== inv.invNo);
                         this.saveDataToStorage();
@@ -8318,7 +8307,7 @@
                     // Check if Cash / Non-Piutang transaction
                     const isCashTx = (statusStr === 'Lunas' || remaining <= 0 || inv.dueDate === '-' || inv.dueDate === 'Cash' || inv.dueDate === 'Lunas' || (inv.paymentMethod && inv.paymentMethod !== 'Kredit' && inv.paymentMethod !== 'Tempo'));
 
-                    const hasDueDate = Boolean(!isCashTx && inv.dueDate && String(inv.dueDate).trim() !== '' && inv.dueDate !== '-' && inv.dueDate !== 'Cash' && inv.dueDate !== 'Lunas');
+                    const hasDueDate = Boolean(!isCashTx && inv.dueDate && String(inv.dueDate).trim() !== '' && String(inv.dueDate).trim() !== 'null' && inv.dueDate !== '-' && inv.dueDate !== 'Cash' && inv.dueDate !== 'Lunas');
                     const dueDateStr = hasDueDate ? String(inv.dueDate).trim() : '';
 
                     // Resolve items from inv, or trx, or penawaran
