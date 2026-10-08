@@ -888,7 +888,7 @@
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-slate-100 font-medium">
-                                    <template x-for="p in piutangList" :key="p.id">
+                                    <template x-for="p in (piutangList || []).filter(item => item.status !== 'Dibatalkan' && item.status !== 'Lunas' && Number(item.remaining) > 0)" :key="p.id">
                                         <tr class="hover:bg-slate-50/80 transition-colors">
                                             <td class="p-3">
                                                 <span class="font-bold text-slate-800" x-text="p.customerName"></span>
@@ -3536,73 +3536,74 @@
     </div>
 
     <!-- AGRA JAYA REUSABLE CUSTOM MODAL DIALOG -->
-    <div x-show="appModal && appModal.show" 
-         x-cloak
-         x-transition:enter="transition ease-out duration-200"
-         x-transition:enter-start="opacity-0 scale-95"
-         x-transition:enter-end="opacity-100 scale-100"
-         x-transition:leave="transition ease-in duration-150"
-         x-transition:leave-start="opacity-100 scale-100"
-         x-transition:leave-end="opacity-0 scale-95"
-         @keydown.escape.window="if (appModal && appModal.show) closeAppModal(appModal.type === 'alert' ? true : false)"
-         @keydown.enter.window="if (appModal && appModal.show && appModal.type !== 'prompt') closeAppModal(appModal.type === 'prompt' ? appModal.inputValue : true)"
-         @click.self="if (appModal && appModal.show) closeAppModal(appModal.type === 'alert' ? true : false)"
-         class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 select-none">
-        
+    <div x-show="appModal && appModal.show" x-cloak x-transition:enter="transition ease-out duration-200"
+        x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+        x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 scale-100"
+        x-transition:leave-end="opacity-0 scale-95"
+        @keydown.escape.window="if (appModal && appModal.show) closeAppModal(appModal.type === 'alert' ? true : false)"
+        @keydown.enter.window="if (appModal && appModal.show && appModal.type !== 'prompt') closeAppModal(appModal.type === 'prompt' ? appModal.inputValue : true)"
+        @click.self="if (appModal && appModal.show) closeAppModal(appModal.type === 'alert' ? true : false)"
+        class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 select-none">
+
         <div class="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-100 transform transition-all"
-             @click.stop>
-            
+            @click.stop>
+
             <div class="flex items-start gap-4">
                 <div class="shrink-0">
                     <template x-if="appModal.variant === 'info'">
-                        <div class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-xl font-bold border border-blue-100 shadow-sm">
+                        <div
+                            class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-xl font-bold border border-blue-100 shadow-sm">
                             <i class="fa-solid fa-circle-info"></i>
                         </div>
                     </template>
                     <template x-if="appModal.variant === 'success'">
-                        <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl font-bold border border-emerald-100 shadow-sm">
+                        <div
+                            class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl font-bold border border-emerald-100 shadow-sm">
                             <i class="fa-solid fa-circle-check"></i>
                         </div>
                     </template>
                     <template x-if="appModal.variant === 'warning'">
-                        <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl font-bold border border-amber-100 shadow-sm">
+                        <div
+                            class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl font-bold border border-amber-100 shadow-sm">
                             <i class="fa-solid fa-triangle-exclamation"></i>
                         </div>
                     </template>
                     <template x-if="appModal.variant === 'danger'">
-                        <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl font-bold border border-rose-100 shadow-sm">
+                        <div
+                            class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl font-bold border border-rose-100 shadow-sm">
                             <i class="fa-solid fa-circle-xmark"></i>
                         </div>
                     </template>
                 </div>
 
                 <div class="space-y-1 flex-1">
-                    <h3 class="font-bold text-slate-800 text-base leading-snug" x-text="appModal.title || 'AGRA JAYA'"></h3>
-                    <div class="text-xs text-slate-600 leading-relaxed whitespace-pre-line break-words max-h-[60vh] overflow-y-auto pr-1 select-text" x-text="appModal.message"></div>
+                    <h3 class="font-bold text-slate-800 text-base leading-snug" x-text="appModal.title || 'AGRA JAYA'">
+                    </h3>
+                    <div class="text-xs text-slate-600 leading-relaxed whitespace-pre-line break-words max-h-[60vh] overflow-y-auto pr-1 select-text"
+                        x-text="appModal.message"></div>
                 </div>
             </div>
 
             <template x-if="appModal.type === 'prompt'">
                 <div class="pt-1">
-                    <input type="text" 
-                           x-model="appModal.inputValue" 
-                           :placeholder="appModal.inputPlaceholder || 'Masukkan keterangan...'"
-                           @keydown.enter.prevent="closeAppModal(appModal.inputValue)"
-                           x-init="$watch('appModal.show', val => { if(val && appModal.type==='prompt') $nextTick(() => $el.focus()) })"
-                           class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-800 focus:bg-white transition-all">
+                    <input type="text" x-model="appModal.inputValue"
+                        :placeholder="appModal.inputPlaceholder || 'Masukkan keterangan...'"
+                        @keydown.enter.prevent="closeAppModal(appModal.inputValue)"
+                        x-init="$watch('appModal.show', val => { if(val && appModal.type==='prompt') $nextTick(() => $el.focus()) })"
+                        class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-800 focus:bg-white transition-all">
                 </div>
             </template>
 
             <div class="pt-2 flex items-center gap-2.5">
                 <template x-if="appModal.type === 'confirm' || appModal.type === 'prompt'">
                     <button type="button" @click="closeAppModal(appModal.type === 'prompt' ? null : false)"
-                            class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors">
+                        class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors">
                         <span x-text="appModal.cancelText || 'Batal'"></span>
                     </button>
                 </template>
                 <button type="button" @click="closeAppModal(appModal.type === 'prompt' ? appModal.inputValue : true)"
-                        :class="appModal.variant === 'danger' ? 'bg-rose-600 hover:bg-rose-700 text-white' : 'bg-slate-900 hover:bg-slate-800 text-white'"
-                        class="flex-1 py-2.5 font-bold rounded-xl text-xs shadow-md transition-all active:scale-[0.98]">
+                    :class="appModal.variant === 'danger' ? 'bg-rose-600 hover:bg-rose-700 text-white' : 'bg-slate-900 hover:bg-slate-800 text-white'"
+                    class="flex-1 py-2.5 font-bold rounded-xl text-xs shadow-md transition-all active:scale-[0.98]">
                     <span x-text="appModal.confirmText || (appModal.type === 'alert' ? 'OK' : 'Lanjutkan')"></span>
                 </button>
             </div>
@@ -3786,6 +3787,15 @@
                 paymentHistory: [],
                 showPaymentHistoryModal: false,
                 activePaymentHistoryItems: [],
+                isSubmittingPayPiutang: false,
+                isSubmittingQuotation: false,
+                isSubmittingPOS: false,
+                isSubmittingCorrection: false,
+                isSubmittingConvert: false,
+                isSubmittingVoidPayment: false,
+                voidPaymentReason: '',
+                showVoidPaymentModal: false,
+                activeVoidTargetPay: null,
                 activePaymentHistoryInv: null,
 
                 // Filters
@@ -4055,7 +4065,7 @@
 
                 async logout(reason = null) {
                     if (reason) {
-                      this.showAppAlert(reason);
+                        this.showAppAlert(reason);
                     }
                     this.cleanupRealtimeSubscription();
                     if (supabaseClient) {
@@ -4679,13 +4689,13 @@
 
                 addToCart(product) {
                     if (product.type === 'barang' && product.stock <= 0) {
-                      this.showAppAlert('Stok barang ini sedang habis!');
+                        this.showAppAlert('Stok barang ini sedang habis!');
                         return;
                     }
                     const existing = this.cart.find(item => item.id === product.id);
                     if (existing) {
                         if (product.type === 'barang' && existing.qty >= product.stock) {
-                          this.showAppAlert('Jumlah melebihi stok yang tersedia!');
+                            this.showAppAlert('Jumlah melebihi stok yang tersedia!');
                             return;
                         }
                         existing.qty++;
@@ -4699,7 +4709,7 @@
                     const prod = this.products.find(p => p.id === item.id);
                     if (change > 0 && item.type === 'barang' && prod) {
                         if (item.qty + change > prod.stock) {
-                          this.showAppAlert(`Jumlah melebihi stok yang tersedia (${prod.stock})!`);
+                            this.showAppAlert(`Jumlah melebihi stok yang tersedia (${prod.stock})!`);
                             return;
                         }
                     }
@@ -4752,7 +4762,7 @@
 
                 async persistStockChangesToSupabase(changes, actionType, referenceCode, notePrefix) {
                     if (!supabaseClient || !this.isAuthenticated || !this.currentUser) {
-                      this.showAppAlert('Sesi pengguna tidak siap. Perubahan stok dibatalkan.');
+                        this.showAppAlert('Sesi pengguna tidak siap. Perubahan stok dibatalkan.');
                         return false;
                     }
                     if (!Array.isArray(changes) || changes.length === 0) return true;
@@ -4824,7 +4834,7 @@
                             }
                         }
 
-                      this.showAppAlert('Gagal menyimpan perubahan stok ke database. Transaksi dibatalkan.');
+                        this.showAppAlert('Gagal menyimpan perubahan stok ke database. Transaksi dibatalkan.');
                         return false;
                     }
                 },
@@ -4832,7 +4842,7 @@
                 async completeTransaction() {
                     // 1. VALIDASI CART
                     if (!Array.isArray(this.cart) || this.cart.length === 0) {
-                      this.showAppAlert('Keranjang transaksi masih kosong.');
+                        this.showAppAlert('Keranjang transaksi masih kosong.');
                         return;
                     }
 
@@ -4844,7 +4854,7 @@
 
                     const grandTotal = this.calculateTotal();
                     if (!Number.isFinite(grandTotal) || grandTotal < 0) {
-                      this.showAppAlert('Total nilai transaksi tidak valid.');
+                        this.showAppAlert('Total nilai transaksi tidak valid.');
                         return;
                     }
 
@@ -4852,31 +4862,31 @@
                     for (let cartItem of this.cart) {
                         const prod = this.products.find(p => p.id === cartItem.id);
                         if (!prod) {
-                          this.showAppAlert(`Produk "${cartItem.name || 'Item'}" tidak ditemukan di sistem! Transaksi dibatalkan.`);
+                            this.showAppAlert(`Produk "${cartItem.name || 'Item'}" tidak ditemukan di sistem! Transaksi dibatalkan.`);
                             return;
                         }
 
                         const qty = Number(cartItem.qty);
                         if (!Number.isFinite(qty) || qty <= 0) {
-                          this.showAppAlert(`Jumlah item untuk "${cartItem.name || 'Item'}" tidak valid.`);
+                            this.showAppAlert(`Jumlah item untuk "${cartItem.name || 'Item'}" tidak valid.`);
                             return;
                         }
 
                         const price = Number(cartItem.price);
                         if (!Number.isFinite(price) || price < 0) {
-                          this.showAppAlert(`Harga item untuk "${cartItem.name || 'Item'}" tidak valid.`);
+                            this.showAppAlert(`Harga item untuk "${cartItem.name || 'Item'}" tidak valid.`);
                             return;
                         }
 
                         if (prod.type === 'barang') {
                             const prodStock = Number(prod.stock);
                             if (!Number.isFinite(prodStock) || prodStock < 0) {
-                              this.showAppAlert(`Data stok untuk produk "${prod.name}" tidak valid.`);
+                                this.showAppAlert(`Data stok untuk produk "${prod.name}" tidak valid.`);
                                 return;
                             }
 
                             if (qty > prodStock) {
-                              this.showAppAlert(`Stok untuk "${prod.name}" tidak mencukupi (Tersedia: ${prodStock}, Dibutuhkan: ${qty}). Transaksi dibatalkan.`);
+                                this.showAppAlert(`Stok untuk "${prod.name}" tidak mencukupi (Tersedia: ${prodStock}, Dibutuhkan: ${qty}). Transaksi dibatalkan.`);
                                 return;
                             }
                         }
@@ -4886,17 +4896,17 @@
                     if (this.paymentMethod === 'Tunai') {
                         const cash = Number(this.cashGiven);
                         if (!Number.isFinite(cash) || cash < grandTotal) {
-                          this.showAppAlert(`Uang diterima (${this.formatRupiah(Number.isFinite(cash) ? cash : 0)}) kurang dari total tagihan (${this.formatRupiah(grandTotal)})!`);
+                            this.showAppAlert(`Uang diterima (${this.formatRupiah(Number.isFinite(cash) ? cash : 0)}) kurang dari total tagihan (${this.formatRupiah(grandTotal)})!`);
                             return;
                         }
                     } else if (this.paymentMethod === 'Kredit') {
                         const dp = Number(this.dpAmount);
                         if (!Number.isFinite(dp) || dp < 0) {
-                          this.showAppAlert('Nominal DP / Uang Muka tidak valid.');
+                            this.showAppAlert('Nominal DP / Uang Muka tidak valid.');
                             return;
                         }
                         if (dp > grandTotal) {
-                          this.showAppAlert(`Nominal DP (${this.formatRupiah(dp)}) tidak boleh melebihi total tagihan (${this.formatRupiah(grandTotal)})!`);
+                            this.showAppAlert(`Nominal DP (${this.formatRupiah(dp)}) tidak boleh melebihi total tagihan (${this.formatRupiah(grandTotal)})!`);
                             return;
                         }
                     }
@@ -4912,14 +4922,14 @@
                         if (cartItem.costPrice !== undefined) {
                             const cp = Number(cartItem.costPrice);
                             if (!Number.isFinite(cp) || cp < 0) {
-                              this.showAppAlert(`Harga modal item "${cartItem.name || 'Item'}" tidak valid. Transaksi dibatalkan.`);
+                                this.showAppAlert(`Harga modal item "${cartItem.name || 'Item'}" tidak valid. Transaksi dibatalkan.`);
                                 return;
                             }
                             costPrice = cp;
                         } else {
                             const cp = Number(prod ? prod.costPrice : undefined);
                             if (!Number.isFinite(cp) || cp < 0) {
-                              this.showAppAlert(`Harga modal produk "${prod ? prod.name : 'Produk'}" tidak valid. Transaksi dibatalkan.`);
+                                this.showAppAlert(`Harga modal produk "${prod ? prod.name : 'Produk'}" tidak valid. Transaksi dibatalkan.`);
                                 return;
                             }
                             costPrice = cp;
@@ -4943,27 +4953,27 @@
                     for (let snapshotItem of cartItemsSnapshot) {
                         const itemCost = snapshotItem.costPrice * snapshotItem.qty;
                         if (!Number.isFinite(itemCost) || itemCost < 0) {
-                          this.showAppAlert('Perhitungan modal item tidak valid. Transaksi dibatalkan.');
+                            this.showAppAlert('Perhitungan modal item tidak valid. Transaksi dibatalkan.');
                             return;
                         }
                         totalCost += itemCost;
                     }
 
                     if (!Number.isFinite(totalCost) || totalCost < 0) {
-                      this.showAppAlert('Perhitungan total modal transaksi tidak valid.');
+                        this.showAppAlert('Perhitungan total modal transaksi tidak valid.');
                         return;
                     }
 
                     const grossProfit = grandTotal - totalCost;
                     if (!Number.isFinite(grossProfit)) {
-                      this.showAppAlert('Perhitungan estimasi laba transaksi tidak valid.');
+                        this.showAppAlert('Perhitungan estimasi laba transaksi tidak valid.');
                         return;
                     }
 
                     // 7. PROSES MUTASI DATA (HANYA SETELAH SELURUH VALIDASI PAS)
                     // 7.1 VALIDASI AUTH SESSION UNTUK PERSISTENCE OPERASIONAL
                     if (!supabaseClient || !this.isAuthenticated || !this.currentUser || !this.currentUser.id) {
-                      this.showAppAlert('Sesi pengguna tidak siap atau belum terautentikasi. Transaksi dibatalkan.');
+                        this.showAppAlert('Sesi pengguna tidak siap atau belum terautentikasi. Transaksi dibatalkan.');
                         return;
                     }
 
@@ -4982,12 +4992,12 @@
 
                         if (checkError) throw checkError;
                         if (existingTrx) {
-                          this.showAppAlert('Kode transaksi ' + code + ' sudah terdaftar di database. Silakan coba kembali.');
+                            this.showAppAlert('Kode transaksi ' + code + ' sudah terdaftar di database. Silakan coba kembali.');
                             return;
                         }
                     } catch (chkErr) {
                         console.error('Cek duplicate transaction error:', chkErr);
-                      this.showAppAlert('Gagal memverifikasi status transaksi di database: ' + (chkErr.message || chkErr) + '. Transaksi dibatalkan.');
+                        this.showAppAlert('Gagal memverifikasi status transaksi di database: ' + (chkErr.message || chkErr) + '. Transaksi dibatalkan.');
                         return;
                     }
 
@@ -5020,7 +5030,7 @@
 
                     const revenueCoa = (this.accountingCOA || []).find(c => c.code === '4-1110');
                     if (!revenueCoa || !revenueCoa.id) {
-                      this.showAppAlert('Bagan akun Pendapatan Penjualan Barang (4-1110) tidak ditemukan di database. Transaksi dibatalkan.');
+                        this.showAppAlert('Bagan akun Pendapatan Penjualan Barang (4-1110) tidak ditemukan di database. Transaksi dibatalkan.');
                         return;
                     }
                     const revenueCoaId = Number(revenueCoa.id);
@@ -5041,13 +5051,13 @@
                         }
 
                         if (!paymentAccObj) {
-                          this.showAppAlert('Akun pembayaran kas/bank untuk metode ' + this.paymentMethod + ' tidak terdaftar di sistem. Transaksi dibatalkan.');
+                            this.showAppAlert('Akun pembayaran kas/bank untuk metode ' + this.paymentMethod + ' tidak terdaftar di sistem. Transaksi dibatalkan.');
                             return;
                         }
 
                         paymentCoaId = Number(paymentAccObj.chart_of_account_id || (paymentAccObj.chart_of_accounts ? paymentAccObj.chart_of_accounts.id : null));
                         if (!paymentCoaId) {
-                          this.showAppAlert('Akun kas / bank ' + paymentAccObj.name + ' tidak memiliki relasi COA yang valid. Transaksi dibatalkan.');
+                            this.showAppAlert('Akun kas / bank ' + paymentAccObj.name + ' tidak memiliki relasi COA yang valid. Transaksi dibatalkan.');
                             return;
                         }
 
@@ -5055,7 +5065,7 @@
                     } else if (this.paymentMethod === 'Kredit') {
                         const piutangCoa = (this.accountingCOA || []).find(c => c.code === '1-1110');
                         if (!piutangCoa || !piutangCoa.id) {
-                          this.showAppAlert('Bagan akun Piutang Usaha (1-1110) tidak ditemukan di database. Transaksi dibatalkan.');
+                            this.showAppAlert('Bagan akun Piutang Usaha (1-1110) tidak ditemukan di database. Transaksi dibatalkan.');
                             return;
                         }
                         piutangCoaId = Number(piutangCoa.id);
@@ -5065,12 +5075,12 @@
                             const kasPayAcc = (this.accountingPaymentAccounts || []).find(a => a.type === 'CASH' || a.name === 'Kas Tunai Kasir');
                             kasCoaId = kasPayAcc ? Number(kasPayAcc.chart_of_account_id || (kasPayAcc.chart_of_accounts ? kasPayAcc.chart_of_accounts.id : null)) : null;
                             if (!kasPayAcc || !kasCoaId) {
-                              this.showAppAlert('Akun Kas Tunai (1-1010) untuk penerimaan DP piutang tidak ditemukan. Transaksi dibatalkan.');
+                                this.showAppAlert('Akun Kas Tunai (1-1010) untuk penerimaan DP piutang tidak ditemukan. Transaksi dibatalkan.');
                                 return;
                             }
                         }
                     } else {
-                      this.showAppAlert('Metode pembayaran "' + this.paymentMethod + '" tidak dapat dipetakan ke sistem akuntansi. Transaksi dibatalkan.');
+                        this.showAppAlert('Metode pembayaran "' + this.paymentMethod + '" tidak dapat dipetakan ke sistem akuntansi. Transaksi dibatalkan.');
                         return;
                     }
 
@@ -5192,7 +5202,7 @@
                                     .eq('id', sc.product.id);
                             }
                         }
-                      this.showAppAlert('Gagal menyimpan transaksi / posting jurnal ke database: ' + (dbErr.message || dbErr) + '. Transaksi dibatalkan dan keranjang tidak dihapus.');
+                        this.showAppAlert('Gagal menyimpan transaksi / posting jurnal ke database: ' + (dbErr.message || dbErr) + '. Transaksi dibatalkan dan keranjang tidak dihapus.');
                         return;
                     }
 
@@ -5467,7 +5477,7 @@
                 editQuotation(qt) {
                     if (!qt) return;
                     if (qt.status === 'Converted' || qt.status === 'Invoiced') {
-                      this.showAppAlert(`Penawaran ${qt.qtNo || ''} sudah dikonversi menjadi Invoice dan tidak dapat diubah.`);
+                        this.showAppAlert(`Penawaran ${qt.qtNo || ''} sudah dikonversi menjadi Invoice dan tidak dapat diubah.`);
                         return;
                     }
                     this.editingQtId = qt.id;
@@ -5497,11 +5507,11 @@
                 async approveQuotation(qt) {
                     if (!qt) return;
                     if (qt.status === 'Approved' || qt.status === 'Deal') {
-                      this.showAppAlert(`Penawaran ${qt.qtNo} sudah berstatus DEAL / APPROVED.`);
+                        this.showAppAlert(`Penawaran ${qt.qtNo} sudah berstatus DEAL / APPROVED.`);
                         return;
                     }
                     if (qt.status === 'Converted' || qt.status === 'Invoiced') {
-                      this.showAppAlert(`Penawaran ${qt.qtNo} sudah selesai (Invoice Dibuat).`);
+                        this.showAppAlert(`Penawaran ${qt.qtNo} sudah selesai (Invoice Dibuat).`);
                         return;
                     }
 
@@ -5522,7 +5532,7 @@
                     }
 
                     this.saveDataToStorage();
-                  this.showAppAlert(`Penawaran ${qt.qtNo} berhasil ditandai DEAL / APPROVED! Sekarang quotation dapat dikonversi menjadi Invoice.`);
+                    this.showAppAlert(`Penawaran ${qt.qtNo} berhasil ditandai DEAL / APPROVED! Sekarang quotation dapat dikonversi menjadi Invoice.`);
                 },
 
                 addItemToQuotation() {
@@ -5548,7 +5558,7 @@
                 async deleteQuotation(qt) {
                     if (!qt) return;
                     if (qt.status === 'Converted' || qt.status === 'Invoiced') {
-                      this.showAppAlert(`Penawaran ${qt.qtNo || ''} sudah digunakan untuk Invoice dan tidak dapat dihapus. Silakan proses atau batalkan Invoice terlebih dahulu.`);
+                        this.showAppAlert(`Penawaran ${qt.qtNo || ''} sudah digunakan untuk Invoice dan tidak dapat dihapus. Silakan proses atau batalkan Invoice terlebih dahulu.`);
                         return;
                     }
 
@@ -5573,13 +5583,13 @@
                         }
                     } catch (err) {
                         console.error('Error deleting quotation:', err);
-                      this.showAppAlert('Gagal menghapus penawaran dari database: ' + (err.message || err));
+                        this.showAppAlert('Gagal menghapus penawaran dari database: ' + (err.message || err));
                         return;
                     }
 
                     this.penawaranList = this.penawaranList.filter(q => q.id !== qt.id);
                     this.saveDataToStorage();
-                  this.showAppAlert(`Penawaran ${qt.qtNo} berhasil dihapus.`);
+                    this.showAppAlert(`Penawaran ${qt.qtNo} berhasil dihapus.`);
                 },
 
 
@@ -5635,17 +5645,17 @@
                     }
                     const customerName = (this.newQt.customerName || '').trim();
                     if (!customerName) {
-                      this.showAppAlert('Nama pelanggan wajib diisi.');
+                        this.showAppAlert('Nama pelanggan wajib diisi.');
                         return;
                     }
 
                     if (!Array.isArray(this.newQt.items) || this.newQt.items.length === 0) {
-                      this.showAppAlert('Minimal tambahkan 1 barang atau jasa ke penawaran.');
+                        this.showAppAlert('Minimal tambahkan 1 barang atau jasa ke penawaran.');
                         return;
                     }
 
                     if (!supabaseClient || !this.isAuthenticated || !this.currentUser || !this.currentUser.id) {
-                      this.showAppAlert('Sesi pengguna tidak siap atau belum terautentikasi. Penawaran dibatalkan.');
+                        this.showAppAlert('Sesi pengguna tidak siap atau belum terautentikasi. Penawaran dibatalkan.');
                         return;
                     }
 
@@ -5657,19 +5667,19 @@
                     for (let item of this.newQt.items) {
                         const prod = this.products.find(p => p.id == item.productId || p.id == item.id);
                         if (!prod) {
-                          this.showAppAlert('Ada item penawaran yang sudah tidak tersedia. Silakan periksa kembali item.');
+                            this.showAppAlert('Ada item penawaran yang sudah tidak tersedia. Silakan periksa kembali item.');
                             return;
                         }
 
                         const qty = Number(item.qty);
                         if (isNaN(qty) || !isFinite(qty) || qty <= 0) {
-                          this.showAppAlert(`Jumlah (qty) untuk item "${prod.name}" harus lebih dari 0.`);
+                            this.showAppAlert(`Jumlah (qty) untuk item "${prod.name}" harus lebih dari 0.`);
                             return;
                         }
 
                         const price = Number(item.price);
                         if (isNaN(price) || !isFinite(price) || price < 0) {
-                          this.showAppAlert(`Harga untuk item "${prod.name}" tidak valid.`);
+                            this.showAppAlert(`Harga untuk item "${prod.name}" tidak valid.`);
                             return;
                         }
 
@@ -5681,17 +5691,17 @@
 
                         if (discType === 'percent') {
                             if (!Number.isFinite(discVal) || discVal < 0 || discVal > 100) {
-                              this.showAppAlert(`Diskon persentase untuk item "${prod.name}" harus antara 0% dan 100%.`);
+                                this.showAppAlert(`Diskon persentase untuk item "${prod.name}" harus antara 0% dan 100%.`);
                                 return;
                             }
                             discAmt = Math.round((grossSubtotal * discVal / 100) * 100) / 100;
                         } else if (discType === 'nominal') {
                             if (!Number.isFinite(discVal) || discVal < 0) {
-                              this.showAppAlert(`Diskon nominal untuk item "${prod.name}" tidak boleh negatif.`);
+                                this.showAppAlert(`Diskon nominal untuk item "${prod.name}" tidak boleh negatif.`);
                                 return;
                             }
                             if (discVal > grossSubtotal) {
-                              this.showAppAlert(`Diskon nominal (${this.formatRupiah(discVal)}) untuk item "${prod.name}" tidak boleh melebihi subtotal kotor (${this.formatRupiah(grossSubtotal)}).`);
+                                this.showAppAlert(`Diskon nominal (${this.formatRupiah(discVal)}) untuk item "${prod.name}" tidak boleh melebihi subtotal kotor (${this.formatRupiah(grossSubtotal)}).`);
                                 return;
                             }
                             discAmt = Math.round(discVal * 100) / 100;
@@ -5724,7 +5734,7 @@
                     }
 
                     if (isNaN(computedNetTotal) || !isFinite(computedNetTotal) || computedNetTotal < 0) {
-                      this.showAppAlert('Harga/total penawaran tidak valid.');
+                        this.showAppAlert('Harga/total penawaran tidak valid.');
                         return;
                     }
 
@@ -5737,7 +5747,7 @@
                         // EDIT MODE: Update existing quotation
                         const existingQt = this.penawaranList.find(q => q.id === this.editingQtId);
                         if (!existingQt) {
-                          this.showAppAlert('Data penawaran tidak ditemukan.');
+                            this.showAppAlert('Data penawaran tidak ditemukan.');
                             return;
                         }
 
@@ -5789,14 +5799,14 @@
                             existingQt.total = computedNetTotal;
                         } catch (err) {
                             console.error('Update quotation error:', err);
-                          this.showAppAlert('Gagal memperbarui penawaran di database: ' + (err.message || err));
+                            this.showAppAlert('Gagal memperbarui penawaran di database: ' + (err.message || err));
                             return;
                         }
 
                         this.editingQtId = null;
                         this.saveDataToStorage();
                         this.showAddQuotationModal = false;
-                      this.showAppAlert(`Penawaran ${existingQt.qtNo} berhasil diperbarui.`);
+                        this.showAppAlert(`Penawaran ${existingQt.qtNo} berhasil diperbarui.`);
                         return;
                     }
 
@@ -5852,7 +5862,7 @@
                                 await supabaseClient.from('quotations').delete().eq('id', insertedQtId);
                             } catch (cErr) { console.error('Cleanup quotation error:', cErr); }
                         }
-                      this.showAppAlert('Gagal menyimpan penawaran ke database: ' + (err.message || err) + '. Penawaran dibatalkan.');
+                        this.showAppAlert('Gagal menyimpan penawaran ke database: ' + (err.message || err) + '. Penawaran dibatalkan.');
                         return;
                     }
 
@@ -5881,16 +5891,16 @@
 
                     if (qt.status !== 'Approved' && qt.status !== 'Deal') {
                         if (qt.status === 'Converted' || qt.status === 'Invoiced') {
-                          this.showAppAlert(`Penawaran ${qt.qtNo || ''} sudah pernah dikonversi menjadi Invoice.`);
+                            this.showAppAlert(`Penawaran ${qt.qtNo || ''} sudah pernah dikonversi menjadi Invoice.`);
                         } else {
-                          this.showAppAlert(`Penawaran ${qt.qtNo || ''} masih berstatus '${qt.status}'. Penawaran harus ditandai DEAL / APPROVED terlebih dahulu sebelum dapat dikonversi menjadi Invoice.`);
+                            this.showAppAlert(`Penawaran ${qt.qtNo || ''} masih berstatus '${qt.status}'. Penawaran harus ditandai DEAL / APPROVED terlebih dahulu sebelum dapat dikonversi menjadi Invoice.`);
                         }
                         return;
                     }
 
                     const existingInv = this.invoiceList.find(inv => inv.quotationId === qt.id || inv.quotationNo === qt.qtNo);
                     if (existingInv) {
-                      this.showAppAlert(`Penawaran ${qt.qtNo} sudah pernah dikonversi menjadi Invoice: ${existingInv.invNo}`);
+                        this.showAppAlert(`Penawaran ${qt.qtNo} sudah pernah dikonversi menjadi Invoice: ${existingInv.invNo}`);
                         qt.status = 'Approved';
                         this.saveDataToStorage();
                         this.currentTab = 'invoice';
@@ -5931,23 +5941,23 @@
                     // 1. Strict Status Guard: ONLY APPROVED / DEAL CAN BE CONVERTED
                     if (qt.status !== 'Approved' && qt.status !== 'Deal') {
                         if (qt.status === 'Converted' || qt.status === 'Invoiced') {
-                          this.showAppAlert(`Penawaran ${qt.qtNo || ''} sudah pernah dikonversi menjadi Invoice.`);
+                            this.showAppAlert(`Penawaran ${qt.qtNo || ''} sudah pernah dikonversi menjadi Invoice.`);
                         } else {
-                          this.showAppAlert(`Penawaran ${qt.qtNo || ''} masih berstatus '${qt.status}'. Penawaran harus ditandai DEAL / APPROVED terlebih dahulu sebelum dapat dikonversi menjadi Invoice.`);
+                            this.showAppAlert(`Penawaran ${qt.qtNo || ''} masih berstatus '${qt.status}'. Penawaran harus ditandai DEAL / APPROVED terlebih dahulu sebelum dapat dikonversi menjadi Invoice.`);
                         }
                         return;
                     }
 
                     // 2. Auth Session Guard
                     if (!supabaseClient || !this.isAuthenticated || !this.currentUser || !this.currentUser.id) {
-                      this.showAppAlert('Sesi pengguna tidak siap atau belum terautentikasi. Konversi invoice dibatalkan.');
+                        this.showAppAlert('Sesi pengguna tidak siap atau belum terautentikasi. Konversi invoice dibatalkan.');
                         return;
                     }
 
                     // 3. Prevent Duplicate Invoice Guard (Local Check)
                     const existingInv = this.invoiceList.find(inv => inv.quotationId === qt.id || inv.quotationNo === qt.qtNo);
                     if (existingInv) {
-                      this.showAppAlert(`Penawaran ${qt.qtNo} sudah pernah dikonversi menjadi Invoice: ${existingInv.invNo}`);
+                        this.showAppAlert(`Penawaran ${qt.qtNo} sudah pernah dikonversi menjadi Invoice: ${existingInv.invNo}`);
                         qt.status = 'Approved';
                         this.saveDataToStorage();
                         this.currentTab = 'invoice';
@@ -5956,7 +5966,7 @@
 
                     // 4. Validasi Data Quotation & Items Sebelum Mutasi
                     if (!Array.isArray(qt.items) || qt.items.length === 0) {
-                      this.showAppAlert(`Penawaran ${qt.qtNo || ''} tidak dapat dikonversi karena daftar item tidak valid atau kosong.`);
+                        this.showAppAlert(`Penawaran ${qt.qtNo || ''} tidak dapat dikonversi karena daftar item tidak valid atau kosong.`);
                         return;
                     }
 
@@ -5967,26 +5977,26 @@
 
                     for (let item of qt.items) {
                         if (!item) {
-                          this.showAppAlert(`Penawaran ${qt.qtNo || ''} berisi data item yang tidak valid.`);
+                            this.showAppAlert(`Penawaran ${qt.qtNo || ''} berisi data item yang tidak valid.`);
                             return;
                         }
 
                         const pid = item.productId !== undefined ? item.productId : item.id;
                         const prod = this.products.find(p => p.id == pid);
                         if (!prod) {
-                          this.showAppAlert(`Item "${item.name || 'Unknown'}" dalam penawaran tidak ditemukan di daftar produk/jasa. Konversi dibatalkan.`);
+                            this.showAppAlert(`Item "${item.name || 'Unknown'}" dalam penawaran tidak ditemukan di daftar produk/jasa. Konversi dibatalkan.`);
                             return;
                         }
 
                         const qty = Number(item.qty);
                         if (!Number.isFinite(qty) || qty <= 0) {
-                          this.showAppAlert(`Item "${prod.name}" memiliki jumlah (qty) yang tidak valid pada penawaran. Konversi dibatalkan.`);
+                            this.showAppAlert(`Item "${prod.name}" memiliki jumlah (qty) yang tidak valid pada penawaran. Konversi dibatalkan.`);
                             return;
                         }
 
                         const price = Number(item.price);
                         if (!Number.isFinite(price) || price < 0) {
-                          this.showAppAlert(`Item "${prod.name}" memiliki harga yang tidak valid pada penawaran. Konversi dibatalkan.`);
+                            this.showAppAlert(`Item "${prod.name}" memiliki harga yang tidak valid pada penawaran. Konversi dibatalkan.`);
                             return;
                         }
 
@@ -6030,7 +6040,7 @@
                     }
 
                     if (computedNetTotal <= 0) {
-                      this.showAppAlert("Invoice dengan total Rp0 tidak dapat dibuat. Silakan periksa kembali harga atau diskon.");
+                        this.showAppAlert("Invoice dengan total Rp0 tidak dapat dibuat. Silakan periksa kembali harga atau diskon.");
                         return;
                     }
 
@@ -6038,12 +6048,12 @@
                     if (qt.total !== undefined && qt.total !== null) {
                         const qtTotalNum = Number(qt.total);
                         if (!Number.isFinite(qtTotalNum) || qtTotalNum < 0) {
-                          this.showAppAlert(`Total nilai penawaran (${qt.qtNo || ''}) tidak valid. Konversi dibatalkan.`);
+                            this.showAppAlert(`Total nilai penawaran (${qt.qtNo || ''}) tidak valid. Konversi dibatalkan.`);
                             return;
                         }
 
                         if (Math.abs(qtTotalNum - computedNetTotal) > 0.05) {
-                          this.showAppAlert(`Data penawaran ${qt.qtNo || ''} tidak konsisten antara total nota (${this.formatRupiah(qtTotalNum)}) dan Rincian Item Net (${this.formatRupiah(computedNetTotal)}). Konversi dibatalkan.`);
+                            this.showAppAlert(`Data penawaran ${qt.qtNo || ''} tidak konsisten antara total nota (${this.formatRupiah(qtTotalNum)}) dan Rincian Item Net (${this.formatRupiah(computedNetTotal)}). Konversi dibatalkan.`);
                             return;
                         }
                     }
@@ -6075,7 +6085,7 @@
 
                             if (chkQtErr) throw chkQtErr;
                             if (existingSupabaseInvByQt) {
-                              this.showAppAlert(`Penawaran ${qt.qtNo} sudah pernah dikonversi menjadi Invoice: ${existingSupabaseInvByQt.inv_no}`);
+                                this.showAppAlert(`Penawaran ${qt.qtNo} sudah pernah dikonversi menjadi Invoice: ${existingSupabaseInvByQt.inv_no}`);
                                 qt.status = 'Approved';
                                 this.saveDataToStorage();
                                 this.currentTab = 'invoice';
@@ -6091,12 +6101,12 @@
 
                         if (chkErr) throw chkErr;
                         if (existingSupabaseInv) {
-                          this.showAppAlert('Nomor invoice ' + invNo + ' sudah terdaftar di database. Silakan coba kembali.');
+                            this.showAppAlert('Nomor invoice ' + invNo + ' sudah terdaftar di database. Silakan coba kembali.');
                             return;
                         }
                     } catch (chkErr) {
                         console.error('Cek duplicate invoice error:', chkErr);
-                      this.showAppAlert('Gagal memverifikasi data invoice di database: ' + (chkErr.message || chkErr) + '. Konversi dibatalkan.');
+                        this.showAppAlert('Gagal memverifikasi data invoice di database: ' + (chkErr.message || chkErr) + '. Konversi dibatalkan.');
                         return;
                     }
 
@@ -6136,9 +6146,9 @@
                     } catch (dbErr) {
                         console.error('Error persisting invoice to Supabase:', dbErr);
                         if (dbErr && (dbErr.code === '23505' || (dbErr.message && (dbErr.message.includes('quotation_id') || dbErr.message.includes('unique'))))) {
-                          this.showAppAlert(`Penawaran ${qt.qtNo || ''} sudah dikonversi menjadi Invoice oleh proses lain. Konversi dibatalkan.`);
+                            this.showAppAlert(`Penawaran ${qt.qtNo || ''} sudah dikonversi menjadi Invoice oleh proses lain. Konversi dibatalkan.`);
                         } else {
-                          this.showAppAlert('Gagal menyimpan invoice ke database Supabase: ' + (dbErr.message || dbErr) + '. Konversi dibatalkan.');
+                            this.showAppAlert('Gagal menyimpan invoice ke database Supabase: ' + (dbErr.message || dbErr) + '. Konversi dibatalkan.');
                         }
                         return;
                     }
@@ -6171,7 +6181,7 @@
                     } catch (itemsErr) {
                         console.error('Error persisting invoice items to Supabase:', itemsErr);
                         await this.rollbackInvoiceConversion(insertedInvId);
-                      this.showAppAlert('Gagal menyimpan rincian item invoice ke database Supabase: ' + (itemsErr.message || itemsErr) + '. Konversi dibatalkan.');
+                        this.showAppAlert('Gagal menyimpan rincian item invoice ke database Supabase: ' + (itemsErr.message || itemsErr) + '. Konversi dibatalkan.');
                         return;
                     }
 
@@ -6201,7 +6211,7 @@
                         } catch (recErr) {
                             console.error('Error persisting receivable to Supabase:', recErr);
                             await this.rollbackInvoiceConversion(insertedInvId);
-                          this.showAppAlert('Gagal menyimpan piutang ke database Supabase: ' + (recErr.message || recErr) + '. Konversi dibatalkan.');
+                            this.showAppAlert('Gagal menyimpan piutang ke database Supabase: ' + (recErr.message || recErr) + '. Konversi dibatalkan.');
                             return;
                         }
                     }
@@ -6221,7 +6231,7 @@
 
                     if (!piutangCoa || !piutangCoa.id || !salesCoa || !salesCoa.id) {
                         await this.rollbackInvoiceConversion(insertedInvId);
-                      this.showAppAlert('Gagal: Bagan akun esensial (1-1110 atau 4-1110) tidak ditemukan di database. Jurnal tidak bisa diposting.');
+                        this.showAppAlert('Gagal: Bagan akun esensial (1-1110 atau 4-1110) tidak ditemukan di database. Jurnal tidak bisa diposting.');
                         return;
                     }
 
@@ -6246,7 +6256,7 @@
                             });
                         } else {
                             await this.rollbackInvoiceConversion(insertedInvId);
-                          this.showAppAlert('Gagal: Bagan akun Kas tidak ditemukan. Jurnal tidak bisa diposting.');
+                            this.showAppAlert('Gagal: Bagan akun Kas tidak ditemukan. Jurnal tidak bisa diposting.');
                             return;
                         }
                     } else {
@@ -6259,7 +6269,7 @@
                             });
                         } else if (paidAmtVal > 0 && !paymentCoaId) {
                             await this.rollbackInvoiceConversion(insertedInvId);
-                          this.showAppAlert('Gagal: Akun pembayaran untuk DP tidak ditemukan.');
+                            this.showAppAlert('Gagal: Akun pembayaran untuk DP tidak ditemukan.');
                             return;
                         }
                         if (remainingVal > 0) {
@@ -6318,7 +6328,7 @@
                         } catch (jErr) {
                             console.error('Error posting journal entry for invoice:', jErr);
                             await this.rollbackInvoiceConversion(insertedInvId);
-                          this.showAppAlert('Gagal memposting jurnal penjualan invoice ke akuntansi: ' + (jErr.message || jErr) + '. Konversi dibatalkan.');
+                            this.showAppAlert('Gagal memposting jurnal penjualan invoice ke akuntansi: ' + (jErr.message || jErr) + '. Konversi dibatalkan.');
                             return;
                         }
                     }
@@ -6387,20 +6397,20 @@
                     }
 
                     this.saveDataToStorage();
-                  this.showAppAlert(`Penawaran ${qt.qtNo} berhasil dikonversi menjadi Invoice (${isTunaiLunas ? 'LUNAS / CASH' : (isTunaiBelumLunas ? 'CASH (BELUM LUNAS)' : 'KREDIT')}): ${invNo}`);
+                    this.showAppAlert(`Penawaran ${qt.qtNo} berhasil dikonversi menjadi Invoice (${isTunaiLunas ? 'LUNAS / CASH' : (isTunaiBelumLunas ? 'CASH (BELUM LUNAS)' : 'KREDIT')}): ${invNo}`);
                     this.currentTab = 'invoice';
                 },
 
                 async promptCancelInvoice(inv) {
                     if (!inv) return;
                     if (inv.status === 'Void' || inv.status === 'Dibatalkan') {
-                      this.showAppAlert(`Invoice ${inv.invNo || ''} sudah berstatus Dibatalkan / Void.`);
+                        this.showAppAlert(`Invoice ${inv.invNo || ''} sudah berstatus Dibatalkan / Void.`);
                         return;
                     }
 
                     const payments = this.paymentHistoryList.filter(p => p.invNo === inv.invNo && p.status !== 'VOID');
                     if (payments && payments.length > 0) {
-                      this.showAppAlert(`DITOLAK: Invoice ${inv.invNo} memiliki ${payments.length} riwayat pembayaran aktif.\n\nSistem Akuntansi melarang pembatalan invoice yang sudah terbayar (sebagian/lunas) untuk mencegah kerusakan neraca kas.\n\nSolusi: Silakan batalkan (VOID) semua riwayat pembayaran terkait invoice ini terlebih dahulu melalui menu Pembayaran Piutang, baru batalkan Invoicenya.`);
+                        this.showAppAlert(`DITOLAK: Invoice ${inv.invNo} memiliki ${payments.length} riwayat pembayaran aktif.\n\nSistem Akuntansi melarang pembatalan invoice yang sudah terbayar (sebagian/lunas) untuk mencegah kerusakan neraca kas.\n\nSolusi: Silakan batalkan (VOID) semua riwayat pembayaran terkait invoice ini terlebih dahulu melalui menu Pembayaran Piutang, baru batalkan Invoicenya.`);
                         return;
                     }
 
@@ -6432,7 +6442,7 @@
                                 });
                                 if (rpcErr) {
                                     console.error('Reverse journal RPC error:', rpcErr);
-                                  this.showAppAlert('Gagal membalikkan jurnal akuntansi: ' + (rpcErr.message || rpcErr));
+                                    this.showAppAlert('Gagal membalikkan jurnal akuntansi: ' + (rpcErr.message || rpcErr));
                                     return;
                                 }
                             }
@@ -6467,7 +6477,7 @@
                         }
                     } catch (err) {
                         console.error('Void invoice error:', err);
-                      this.showAppAlert('Gagal membatalkan invoice: ' + (err.message || err));
+                        this.showAppAlert('Gagal membatalkan invoice: ' + (err.message || err));
                         return;
                     }
 
@@ -6481,7 +6491,7 @@
                         this.piutangList[recIndex].remaining = 0;
                     }
 
-                  this.showAppAlert(`Invoice ${inv.invNo} berhasil dibatalkan (VOID). Jurnal akuntansi telah direverse secara otomatis.`);
+                    this.showAppAlert(`Invoice ${inv.invNo} berhasil dibatalkan (VOID). Jurnal akuntansi telah direverse secara otomatis.`);
                 },
 
                 async markInvoiceAsCashPaid(inv) {
@@ -6516,10 +6526,10 @@
                         this.piutangList = this.piutangList.filter(p => p.invNo !== inv.invNo);
                         this.saveDataToStorage();
 
-                      this.showAppAlert(`Invoice ${inv.invNo} berhasil ditandai LUNAS (Non-Piutang).`);
+                        this.showAppAlert(`Invoice ${inv.invNo} berhasil ditandai LUNAS (Non-Piutang).`);
                     } catch (err) {
                         console.error('Error marking invoice as cash paid:', err);
-                      this.showAppAlert('Gagal memperbarui status invoice: ' + (err.message || err));
+                        this.showAppAlert('Gagal memperbarui status invoice: ' + (err.message || err));
                     }
                 },
 
@@ -6587,13 +6597,13 @@
 
                 async savePurchase() {
                     if (!this.newPo.supplierName || !this.newPo.items || this.newPo.items.length === 0) {
-                      this.showAppAlert('Lengkapi nama supplier dan item pembelian.');
+                        this.showAppAlert('Lengkapi nama supplier dan item pembelian.');
                         return;
                     }
 
                     // VALIDASI AUTH SESSION UNTUK PERSISTENCE OPERASIONAL
                     if (!supabaseClient || !this.isAuthenticated || !this.currentUser || !this.currentUser.id) {
-                      this.showAppAlert('Sesi pengguna tidak siap atau belum terautentikasi. Pembelian dibatalkan.');
+                        this.showAppAlert('Sesi pengguna tidak siap atau belum terautentikasi. Pembelian dibatalkan.');
                         return;
                     }
 
@@ -6604,37 +6614,37 @@
                     for (let item of this.newPo.items) {
                         const prod = this.products.find(p => p.id == item.productId);
                         if (!prod) {
-                          this.showAppAlert('Ada barang pembelian yang tidak ditemukan. Pembelian tidak dapat diproses.');
+                            this.showAppAlert('Ada barang pembelian yang tidak ditemukan. Pembelian tidak dapat diproses.');
                             return;
                         }
 
                         const currentStock = Number(prod.stock);
                         if (!Number.isFinite(currentStock) || currentStock < 0) {
-                          this.showAppAlert(`Data stok untuk "${prod.name}" tidak valid. Pembelian tidak dapat diproses.`);
+                            this.showAppAlert(`Data stok untuk "${prod.name}" tidak valid. Pembelian tidak dapat diproses.`);
                             return;
                         }
 
                         const qty = Number(item.qty);
                         if (!Number.isFinite(qty) || qty <= 0) {
-                          this.showAppAlert('Jumlah barang harus lebih dari 0.');
+                            this.showAppAlert('Jumlah barang harus lebih dari 0.');
                             return;
                         }
 
                         const costPrice = Number(item.costPrice);
                         if (!Number.isFinite(costPrice) || costPrice < 0) {
-                          this.showAppAlert('Harga beli tidak boleh negatif.');
+                            this.showAppAlert('Harga beli tidak boleh negatif.');
                             return;
                         }
 
                         const itemSubtotal = qty * costPrice;
                         if (!Number.isFinite(itemSubtotal) || itemSubtotal < 0) {
-                          this.showAppAlert('Total pembelian tidak valid. Pembelian tidak dapat diproses.');
+                            this.showAppAlert('Total pembelian tidak valid. Pembelian tidak dapat diproses.');
                             return;
                         }
 
                         const newStock = currentStock + qty;
                         if (!Number.isFinite(newStock) || newStock < 0) {
-                          this.showAppAlert(`Perhitungan stok untuk "${prod.name}" tidak valid. Pembelian tidak dapat diproses.`);
+                            this.showAppAlert(`Perhitungan stok untuk "${prod.name}" tidak valid. Pembelian tidak dapat diproses.`);
                             return;
                         }
 
@@ -6650,7 +6660,7 @@
 
                     // VALIDASI TOTAL PEMBELIAN
                     if (!Number.isFinite(computedTotal) || computedTotal < 0) {
-                      this.showAppAlert('Total pembelian tidak valid. Pembelian tidak dapat diproses.');
+                        this.showAppAlert('Total pembelian tidak valid. Pembelian tidak dapat diproses.');
                         return;
                     }
 
@@ -6669,12 +6679,12 @@
 
                         if (chkErr) throw chkErr;
                         if (existingPo) {
-                          this.showAppAlert('Nomor PO ' + poNo + ' sudah terdaftar di database. Silakan coba kembali.');
+                            this.showAppAlert('Nomor PO ' + poNo + ' sudah terdaftar di database. Silakan coba kembali.');
                             return;
                         }
                     } catch (chkErr) {
                         console.error('Cek duplicate purchase error:', chkErr);
-                      this.showAppAlert('Gagal memverifikasi nomor PO di database: ' + (chkErr.message || chkErr) + '. Pembelian dibatalkan.');
+                        this.showAppAlert('Gagal memverifikasi nomor PO di database: ' + (chkErr.message || chkErr) + '. Pembelian dibatalkan.');
                         return;
                     }
 
@@ -6705,7 +6715,7 @@
 
                     const inventoryCoa = (this.accountingCOA || []).find(c => c.code === '1-1210');
                     if (!inventoryCoa || !inventoryCoa.id) {
-                      this.showAppAlert('Bagan akun Persediaan Barang Dagang (1-1210) tidak ditemukan di database. Pembelian dibatalkan.');
+                        this.showAppAlert('Bagan akun Persediaan Barang Dagang (1-1210) tidak ditemukan di database. Pembelian dibatalkan.');
                         return;
                     }
                     const inventoryCoaId = Number(inventoryCoa.id);
@@ -6723,13 +6733,13 @@
                         }
 
                         if (!paymentAccObj) {
-                          this.showAppAlert('Akun pembayaran kas/bank untuk metode ' + this.newPo.paymentMethod + ' tidak terdaftar di sistem. Pembelian dibatalkan.');
+                            this.showAppAlert('Akun pembayaran kas/bank untuk metode ' + this.newPo.paymentMethod + ' tidak terdaftar di sistem. Pembelian dibatalkan.');
                             return;
                         }
 
                         paymentCoaId = Number(paymentAccObj.chart_of_account_id || (paymentAccObj.chart_of_accounts ? paymentAccObj.chart_of_accounts.id : null));
                         if (!paymentCoaId) {
-                          this.showAppAlert('Akun kas / bank ' + paymentAccObj.name + ' tidak memiliki relasi COA yang valid. Pembelian dibatalkan.');
+                            this.showAppAlert('Akun kas / bank ' + paymentAccObj.name + ' tidak memiliki relasi COA yang valid. Pembelian dibatalkan.');
                             return;
                         }
 
@@ -6737,12 +6747,12 @@
                     } else if (this.newPo.paymentMethod === 'Kredit') {
                         const payableCoa = (this.accountingCOA || []).find(c => c.code === '2-1110');
                         if (!payableCoa || !payableCoa.id) {
-                          this.showAppAlert('Bagan akun Hutang Usaha Supplier (2-1110) tidak ditemukan di database. Pembelian dibatalkan.');
+                            this.showAppAlert('Bagan akun Hutang Usaha Supplier (2-1110) tidak ditemukan di database. Pembelian dibatalkan.');
                             return;
                         }
                         payableCoaId = Number(payableCoa.id);
                     } else {
-                      this.showAppAlert('Metode pembayaran "' + this.newPo.paymentMethod + '" tidak dapat dipetakan ke sistem akuntansi. Pembelian dibatalkan.');
+                        this.showAppAlert('Metode pembayaran "' + this.newPo.paymentMethod + '" tidak dapat dipetakan ke sistem akuntansi. Pembelian dibatalkan.');
                         return;
                     }
 
@@ -6868,7 +6878,7 @@
                                     .eq('id', sc.product.id);
                             }
                         }
-                      this.showAppAlert('Gagal menyimpan data pembelian / posting jurnal ke database: ' + (dbErr.message || dbErr) + '. Pembelian dibatalkan.');
+                        this.showAppAlert('Gagal menyimpan data pembelian / posting jurnal ke database: ' + (dbErr.message || dbErr) + '. Pembelian dibatalkan.');
                         return;
                     }
 
@@ -6904,7 +6914,7 @@
                             id: Date.now(),
                             poNo: poNo,
                             supplierName: this.newPo.supplierName,
-                            dueDate: '30 Hari',
+                            dueDate: null,
                             total: total,
                             paid: 0,
                             remaining: total
@@ -6940,7 +6950,7 @@
                     if (!item) return;
 
                     if (item.status === 'Dibatalkan') {
-                      this.showAppAlert('Invoice ini sudah dibatalkan. Pembayaran tidak dapat diproses.');
+                        this.showAppAlert('Invoice ini sudah dibatalkan. Pembayaran tidak dapat diproses.');
                         return;
                     }
 
@@ -6953,12 +6963,12 @@
                     const piutang = this.piutangList.find(p => p.invNo === invNo);
 
                     if (!piutang) {
-                      this.showAppAlert('Data Piutang untuk Invoice ini tidak ditemukan. Pembayaran belum dapat diproses.');
+                        this.showAppAlert('Data Piutang untuk Invoice ini tidak ditemukan. Pembayaran belum dapat diproses.');
                         return;
                     }
 
                     if (piutang.status === 'Dibatalkan') {
-                      this.showAppAlert('Invoice ini sudah dibatalkan. Pembayaran tidak dapat diproses.');
+                        this.showAppAlert('Invoice ini sudah dibatalkan. Pembayaran tidak dapat diproses.');
                         return;
                     }
 
@@ -6973,118 +6983,35 @@
                 },
 
                 async submitPayPiutang() {
-                    // 1. Validasi Active Piutang
-                    if (!this.activePiutang || !this.activePiutang.invNo) {
-                      this.showAppAlert('Data piutang tidak valid.');
-                        return;
-                    }
-                    if (this.activePiutang.status === 'Dibatalkan') {
-                      this.showAppAlert('Invoice ini sudah dibatalkan. Pembayaran tidak dapat diproses.');
+                    if (this.isSubmittingPayPiutang) return;
+                    if (!this.activePiutang) return;
+
+                    const payAmt = Number(this.payAmount);
+                    if (!Number.isFinite(payAmt) || payAmt <= 0) {
+                        this.showAppAlert('Nominal pembayaran harus lebih besar dari 0!');
                         return;
                     }
 
-                    // Auth Session Check
-                    if (!supabaseClient || !this.isAuthenticated || !this.currentUser || !this.currentUser.id) {
-                      this.showAppAlert('Sesi pengguna tidak siap atau belum terautentikasi. Pembayaran piutang dibatalkan.');
+                    const inv = this.invoiceList.find(i => i.invNo === this.activePiutang.invNo);
+                    if (!inv) {
+                        this.showAppAlert('Data invoice terkait tidak ditemukan. Pembayaran tidak dapat diproses.');
+                        return;
+                    }
+
+                    if (inv.status === 'Dibatalkan' || inv.status === 'Void') {
+                        this.showAppAlert('Invoice ini sudah dibatalkan/void. Pembayaran tidak dapat diproses.');
                         return;
                     }
 
                     const pRemaining = Number(this.activePiutang.remaining);
-                    if (!Number.isFinite(pRemaining) || pRemaining < 0) {
-                      this.showAppAlert('Sisa piutang tidak valid.');
+                    if (payAmt > pRemaining + 0.01) {
+                        this.showAppAlert('Nominal pembayaran (' + this.formatRupiah(payAmt) + ') tidak boleh melebihi sisa piutang (' + this.formatRupiah(pRemaining) + ')!');
                         return;
                     }
 
-                    // 2. Validasi Nominal Pembayaran
-                    const payAmt = Number(this.payAmount);
-                    if (!Number.isFinite(payAmt) || payAmt <= 0) {
-                      this.showAppAlert('Nominal pembayaran harus lebih besar dari 0!');
-                        return;
-                    }
-                    if (payAmt > pRemaining) {
-                      this.showAppAlert(`Nominal pembayaran (${this.formatRupiah(payAmt)}) tidak boleh melebihi sisa piutang (${this.formatRupiah(pRemaining)})!`);
-                        return;
-                    }
-
-                    // 3. Cari Invoice Terkait & Validasi Status
-                    const inv = this.invoiceList.find(i => i.invNo === this.activePiutang.invNo);
-                    if (!inv) {
-                      this.showAppAlert('Data invoice terkait tidak ditemukan. Pembayaran tidak dapat diproses.');
-                        return;
-                    }
-                    if (inv.status === 'Dibatalkan') {
-                      this.showAppAlert('Invoice ini sudah dibatalkan. Pembayaran tidak dapat diproses.');
-                        return;
-                    }
-
-                    const iRemaining = Number(inv.remaining);
-                    if (!Number.isFinite(iRemaining) || iRemaining < 0) {
-                      this.showAppAlert('Sisa tagihan invoice tidak valid.');
-                        return;
-                    }
-
-                    // 4. Validasi Konsistensi Piutang ↔ Invoice
-                    if (Math.abs(pRemaining - iRemaining) > 0.01) {
-                      this.showAppAlert('Pembayaran tidak dapat diproses karena data Invoice dan Piutang tidak sesuai.');
-                        return;
-                    }
-
-                    // 5. Hitung Hasil & Update State secara Konsisten
-                    const pTotal = Number(this.activePiutang.total);
-                    const iTotal = Number(inv.total);
-                    const pPaid = Number(this.activePiutang.paid);
-                    const iPaid = Number(inv.paidAmount);
-
-                    if (!Number.isFinite(pTotal) || pTotal < 0 || !Number.isFinite(iTotal) || iTotal < 0 ||
-                        !Number.isFinite(pPaid) || pPaid < 0 || !Number.isFinite(iPaid) || iPaid < 0) {
-                      this.showAppAlert('Data total atau terbayar pada tagihan tidak valid.');
-                        return;
-                    }
-
-                    if (Math.abs(pTotal - (pPaid + pRemaining)) > 0.01) {
-                      this.showAppAlert('Data Piutang tidak konsisten: Total, Terbayar, dan Sisa tidak sesuai. Pembayaran tidak dapat diproses.');
-                        return;
-                    }
-
-                    if (Math.abs(iTotal - (iPaid + iRemaining)) > 0.01) {
-                      this.showAppAlert('Data Invoice tidak konsisten: Total, Terbayar, dan Sisa tidak sesuai. Pembayaran tidak dapat diproses.');
-                        return;
-                    }
-
-                    if ((pPaid + payAmt > pTotal) || (iPaid + payAmt > iTotal)) {
-                      this.showAppAlert('Total pembayaran melebihi total tagihan piutang.');
-                        return;
-                    }
-
-                    let newPRemaining = pRemaining - payAmt;
-                    let newIRemaining = iRemaining - payAmt;
-
-                    if (!Number.isFinite(newPRemaining) || newPRemaining < 0 || !Number.isFinite(newIRemaining) || newIRemaining < 0) {
-                      this.showAppAlert('Perhitungan sisa piutang tidak valid.');
-                        return;
-                    }
-
-                    if (newPRemaining < 0.01) newPRemaining = 0;
-                    if (newIRemaining < 0.01) newIRemaining = 0;
-
-                    const newStatus = newIRemaining === 0 ? 'Lunas' : 'Sebagian';
-                    const newPaid = pPaid + payAmt;
-                    const dateStr = this.getLocalDateString();
-
-                    // RESOLVE COA & PAYMENT ACCOUNTS FOR RECEIVABLE SETTLEMENT JOURNAL
-                    if (!Array.isArray(this.accountingCOA) || this.accountingCOA.length === 0) {
-                        await this.fetchCOA();
-                    }
                     if (!Array.isArray(this.accountingPaymentAccounts) || this.accountingPaymentAccounts.length === 0) {
                         await this.fetchPaymentAccounts();
                     }
-
-                    const piutangCoa = (this.accountingCOA || []).find(c => c.code === '1-1110');
-                    if (!piutangCoa || !piutangCoa.id) {
-                      this.showAppAlert('Bagan akun Piutang Usaha (1-1110) tidak ditemukan di database. Pembayaran dibatalkan.');
-                        return;
-                    }
-                    const piutangCoaId = Number(piutangCoa.id);
 
                     const payMethod = inv.paymentMethod || 'Tunai';
                     let paymentAccObj = null;
@@ -7097,234 +7024,216 @@
                     }
 
                     if (!paymentAccObj) {
-                      this.showAppAlert('Akun pembayaran kas/bank untuk metode ' + payMethod + ' tidak terdaftar di sistem. Pembayaran dibatalkan.');
-                        return;
-                    }
-
-                    const paymentCoaId = Number(paymentAccObj.chart_of_account_id || (paymentAccObj.chart_of_accounts ? paymentAccObj.chart_of_accounts.id : null));
-                    if (!paymentCoaId) {
-                      this.showAppAlert('Akun kas / bank ' + paymentAccObj.name + ' tidak memiliki relasi COA yang valid. Pembayaran dibatalkan.');
+                        this.showAppAlert('Akun pembayaran kas/bank untuk metode ' + payMethod + ' tidak terdaftar di sistem. Pembayaran dibatalkan.');
                         return;
                     }
                     const payAccountId = Number(paymentAccObj.id);
 
-                    // 6. PERSIST PAYMENT HISTORY, RECEIVABLES & INVOICES WITH AUTOMATIC JOURNAL
-                    let insertedPayHistId = null;
-                    let remoteRecId = null;
+                    this.isSubmittingPayPiutang = true;
+
                     try {
-                        // AMBIL INVOICE ID ASLI DARI SUPABASE JIKA TERDAFTAR DI PUBLIC.INVOICES (NULL UNTUK POS CREDIT)
-                        let targetInvoiceId = null;
-                        const { data: remoteInv, error: remoteInvErr } = await supabaseClient
-                            .from('invoices')
-                            .select('id, inv_no')
-                            .eq('inv_no', inv.invNo)
-                            .maybeSingle();
-
-                        if (remoteInvErr) {
-                            throw new Error('Gagal memverifikasi data invoice di database: ' + remoteInvErr.message);
+                        let targetInvoiceId = inv.id;
+                        if (!targetInvoiceId || typeof targetInvoiceId !== 'number' || targetInvoiceId > 2000000000000) {
+                            const { data: remoteInv, error: rErr } = await supabaseClient
+                                .from('invoices')
+                                .select('id')
+                                .eq('inv_no', inv.invNo)
+                                .maybeSingle();
+                            if (rErr) throw new Error('Gagal memverifikasi invoice di database: ' + rErr.message);
+                            if (remoteInv) targetInvoiceId = remoteInv.id;
                         }
 
-                        if (remoteInv) {
-                            const invIdNum = Number(remoteInv.id);
-                            if (!Number.isSafeInteger(invIdNum) || invIdNum <= 0) {
-                                throw new Error('ID invoice dari database tidak valid untuk nomor: ' + inv.invNo);
-                            }
-                            targetInvoiceId = invIdNum;
+                        if (!targetInvoiceId) {
+                            throw new Error('ID invoice tidak ditemukan di database.');
                         }
 
-                        const payHistPayload = {
-                            inv_no: inv.invNo,
-                            customer_name: inv.customerName || this.activePiutang.customerName || 'Pelanggan',
-                            payment_date: dateStr,
-                            payment_method: payMethod,
-                            payment_account_id: payAccountId,
-                            amount: payAmt,
-                            payment_type: 'piutang',
-                            invoice_id: targetInvoiceId,
-                            status: 'VALID',
-                            created_by: this.currentUser.id
-                        };
-
-                        const { data: insertedHist, error: histErr } = await supabaseClient
-                            .from('payment_history')
-                            .insert(payHistPayload)
-                            .select('id')
-                            .single();
-
-                        if (histErr) throw histErr;
-                        if (!insertedHist || !insertedHist.id) throw new Error('Gagal mendapatkan ID riwayat pembayaran.');
-                        insertedPayHistId = insertedHist.id;
-
-                        // Update public.receivables
-                        const { data: remoteRec } = await supabaseClient
-                            .from('receivables')
-                            .select('id, paid, remaining, status')
-                            .eq('inv_no', inv.invNo)
-                            .maybeSingle();
-
-                        if (remoteRec) {
-                            remoteRecId = remoteRec.id;
-                            await supabaseClient
-                                .from('receivables')
-                                .update({
-                                    paid: newPaid,
-                                    remaining: newPRemaining,
-                                    status: newStatus,
-                                    updated_at: new Date().toISOString()
-                                })
-                                .eq('id', remoteRec.id);
-                        } else {
-                            await supabaseClient
-                                .from('receivables')
-                                .insert({
-                                    inv_no: inv.invNo,
-                                    customer_name: inv.customerName || this.activePiutang.customerName || 'Pelanggan',
-                                    due_date: inv.dueDate || null,
-                                    status: newStatus,
-                                    total: pTotal,
-                                    paid: newPaid,
-                                    remaining: newPRemaining,
-                                    invoice_id: targetInvoiceId
-                                });
-                        }
-
-                        // Update public.invoices
-                        await supabaseClient
-                            .from('invoices')
-                            .update({
-                                paid_amount: newPaid,
-                                remaining: newIRemaining,
-                                status: newStatus
-                            })
-                            .eq('inv_no', inv.invNo);
-
-                        // POST AUTOMATIC JOURNAL VIA RPC
-                        const journalLines = [
-                            {
-                                chart_of_account_id: paymentCoaId,
-                                debit: payAmt,
-                                credit: 0,
-                                description: 'Penerimaan pembayaran piutang ' + inv.invNo + ' via ' + (paymentAccObj ? paymentAccObj.name : payMethod)
-                            },
-                            {
-                                chart_of_account_id: piutangCoaId,
-                                debit: 0,
-                                credit: payAmt,
-                                description: 'Pelunasan/cicilan piutang ' + inv.invNo + ' (' + (inv.customerName || 'Pelanggan') + ')'
-                            }
-                        ];
-
-                        const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry', {
-                            p_journal_date: dateStr,
-                            p_source_type: 'PAYMENT',
-                            p_source_id: insertedPayHistId,
-                            p_source_code: 'PAY-' + inv.invNo,
-                            p_description: 'Jurnal Pembayaran Piutang ' + inv.invNo + ' - ' + (inv.customerName || 'Pelanggan'),
-                            p_user_id: this.currentUser.id,
-                            p_lines: journalLines
+                        // EXECUTE ATOMIC PAYMENT RPC (SERVER-SIDE OVERPAYMENT & DOUBLE-SUBMIT GUARD)
+                        const { data: rpcRes, error: rpcErr } = await supabaseClient.rpc('process_payment_atomic', {
+                            p_invoice_id: Number(targetInvoiceId),
+                            p_amount: payAmt,
+                            p_payment_method: payMethod,
+                            p_payment_account_id: payAccountId,
+                            p_note: 'Pembayaran piutang via ' + (paymentAccObj ? paymentAccObj.name : payMethod)
                         });
 
-                        if (journalError) {
-                            console.error('Error posting journal for receivable payment:', journalError);
-                            throw new Error('Posting jurnal otomatis pembayaran piutang ' + inv.invNo + ' ke General Ledger gagal: ' + (journalError.message || journalError));
+                        if (rpcErr) {
+                            console.error('Error executing process_payment_atomic:', rpcErr);
+                            throw new Error(rpcErr.message || 'Proses pembayaran atomis gagal di database.');
                         }
-                    } catch (recErr) {
-                        console.error('Error processing receivable payment or journal:', recErr);
-                        // Revert remote state if update or journal failed
-                        if (remoteRecId) {
-                            try {
-                                await supabaseClient.from('receivables').update({ paid: pPaid, remaining: pRemaining, status: this.activePiutang.status }).eq('id', remoteRecId);
-                            } catch (rErr) { console.error('Revert receivables error:', rErr); }
+
+                        if (!rpcRes || !rpcRes.success) {
+                            throw new Error('Respons RPC pembayaran tidak valid.');
                         }
-                        try {
-                            await supabaseClient.from('invoices').update({ paid_amount: iPaid, remaining: iRemaining, status: inv.status }).eq('inv_no', inv.invNo);
-                        } catch (iErr) { console.error('Revert invoices error:', iErr); }
-                        if (insertedPayHistId) {
-                            try {
-                                await supabaseClient.from('payment_history').delete().eq('id', insertedPayHistId);
-                            } catch (cErr) { console.error('Cleanup payment_history error:', cErr); }
+
+                        // UPDATE LOCAL STATE FROM AUTHORITATIVE SERVER RESPONSE
+                        const newPaid = Number(rpcRes.new_paid);
+                        const newRemaining = Number(rpcRes.new_remaining);
+                        const newStatus = rpcRes.status;
+
+                        this.activePiutang.paid = newPaid;
+                        this.activePiutang.remaining = newRemaining;
+                        this.activePiutang.status = newStatus;
+
+                        inv.paidAmount = newPaid;
+                        inv.remaining = newRemaining;
+                        inv.status = newStatus;
+
+                        if (Array.isArray(this.paymentHistory)) {
+                            this.paymentHistory.unshift({
+                                id: rpcRes.payment_id,
+                                inv_no: inv.invNo,
+                                invoice_id: Number(targetInvoiceId),
+                                date: this.getLocalDateString(),
+                                payment_method: payMethod,
+                                amount: payAmt,
+                                status: 'VALID',
+                                created_by: this.currentUser ? this.currentUser.id : null
+                            });
                         }
-                      this.showAppAlert('Gagal memproses pembayaran / posting jurnal piutang di database: ' + (recErr.message || recErr) + '. Pembayaran dibatalkan.');
+
+                        this.saveDataToStorage();
+                        this.showPayPiutangModal = false;
+                        this.payAmount = '';
+                        this.showAppAlert('Pembayaran sebesar ' + this.formatRupiah(payAmt) + ' berhasil diproses dan dicatat ke General Ledger!');
+                        
+                        // SINKRONKAN GENERAL LEDGER
+                        await this.loadAccountingDataFromSupabase();
+                    } catch (err) {
+                        console.error('Submit payment piutang error:', err);
+                        this.showAppAlert('Gagal memproses pembayaran: ' + (err.message || err));
+                    } finally {
+                        this.isSubmittingPayPiutang = false;
+                    }
+                },
+
+                openVoidPaymentModal(pay) {
+                    if (!this.currentUser || (this.currentUser.role !== 'owner' && this.currentUser.role !== 'admin')) {
+                        this.showAppAlert('Hanya peran Owner atau Admin yang berhak membatalkan (VOID) pembayaran.');
+                        return;
+                    }
+                    if (!pay || pay.status === 'VOID') {
+                        this.showAppAlert('Pembayaran ini sudah berstatus VOID.');
+                        return;
+                    }
+                    this.activeVoidTargetPay = pay;
+                    this.voidPaymentReason = '';
+                    this.showVoidPaymentModal = true;
+                },
+
+                async executeVoidPayment() {
+                    if (this.isSubmittingVoidPayment) return;
+                    if (!this.activeVoidTargetPay) return;
+
+                    const reason = String(this.voidPaymentReason || '').trim();
+                    if (!reason) {
+                        this.showAppAlert('Alasan pembatalan (VOID) pembayaran wajib diisi!');
                         return;
                     }
 
-                    // Apply updates to local state
-                    this.activePiutang.paid = newPaid;
-                    this.activePiutang.remaining = newPRemaining;
-                    this.activePiutang.status = newStatus;
+                    this.isSubmittingVoidPayment = true;
+                    try {
+                        const payId = Number(this.activeVoidTargetPay.id);
+                        if (!payId || isNaN(payId)) {
+                            throw new Error('ID pembayaran tidak valid.');
+                        }
 
-                    inv.paidAmount = newPaid;
-                    inv.remaining = newIRemaining;
-                    inv.status = newStatus;
+                        // EXECUTE ATOMIC VOID PAYMENT RPC (IMMUTABLE REVERSAL JOURNAL + RECALCULATION)
+                        const { data: voidRes, error: voidErr } = await supabaseClient.rpc('void_payment_atomic', {
+                            p_payment_id: payId,
+                            p_reason: reason
+                        });
 
-                    // Record Payment History locally
-                    this.paymentHistory.unshift({
-                        id: insertedPayHistId || (Date.now() + Math.random()),
-                        supabaseId: insertedPayHistId,
-                        date: dateStr,
-                        invNo: inv.invNo,
-                        trxCode: inv.trxCode || inv.invNo,
-                        customerName: inv.customerName || this.activePiutang.customerName || 'Pelanggan',
-                        amount: payAmt
-                    });
+                        if (voidErr) {
+                            console.error('Error executing void_payment_atomic:', voidErr);
+                            throw new Error(voidErr.message || 'Gagal membatalkan pembayaran di database.');
+                        }
 
-                    this.saveDataToStorage();
-                    this.showPayPiutangModal = false;
+                        if (!voidRes || !voidRes.success) {
+                            throw new Error('Respons RPC void pembayaran tidak valid.');
+                        }
+
+                        // UPDATE LOCAL STATE
+                        this.activeVoidTargetPay.status = 'VOID';
+                        this.activeVoidTargetPay.note = (this.activeVoidTargetPay.note || '') + ' | VOID REASON: ' + reason;
+                        this.activeVoidTargetPay.voided_at = new Date().toISOString();
+                        this.activeVoidTargetPay.voided_by = this.currentUser ? this.currentUser.id : null;
+
+                        const invNo = this.activeVoidTargetPay.inv_no || this.activeVoidTargetPay.invNo;
+                        const inv = this.invoiceList.find(i => i.invNo === invNo);
+                        if (inv) {
+                            inv.paidAmount = Number(voidRes.recalculated_paid);
+                            inv.remaining = Number(voidRes.recalculated_remaining);
+                            inv.status = voidRes.new_status;
+                        }
+
+                        const piu = this.piutangList.find(p => p.invNo === invNo);
+                        if (piu) {
+                            piu.paid = Number(voidRes.recalculated_paid);
+                            piu.remaining = Number(voidRes.recalculated_remaining);
+                            piu.status = voidRes.new_status;
+                        }
+
+                        this.saveDataToStorage();
+                        this.showVoidPaymentModal = false;
+                        this.showPaymentHistoryModal = false;
+                        this.showAppAlert('Pembayaran berhasil di-VOID dan Jurnal Pembalik (Reversal) otomatis diterbitkan!');
+                        
+                        await this.loadAccountingDataFromSupabase();
+                    } catch (err) {
+                        console.error('Execute void payment error:', err);
+                        this.showAppAlert('Gagal me-VOID pembayaran: ' + (err.message || err));
+                    } finally {
+                        this.isSubmittingVoidPayment = false;
+                    }
                 },
 
-                openPayHutangModal(h) {
-                    this.activeHutang = h;
-                    this.payHutangAmount = h.remaining;
-                    this.showPayHutangModal = true;
-                },
-
-                async submitPayHutang() {
+                submitPayHutang() {
                     // 1. Validasi Data Hutang
                     if (!this.activeHutang || !this.activeHutang.poNo) {
-                      this.showAppAlert('Data hutang tidak valid.');
+                        this.showAppAlert('Data hutang tidak valid.');
                         return;
                     }
 
                     // Auth Session Check
                     if (!supabaseClient || !this.isAuthenticated || !this.currentUser || !this.currentUser.id) {
-                      this.showAppAlert('Sesi pengguna tidak siap atau belum terautentikasi. Pembayaran hutang dibatalkan.');
+                        this.showAppAlert('Sesi pengguna tidak siap atau belum terautentikasi. Pembayaran hutang dibatalkan.');
                         return;
                     }
 
                     const hRemaining = Number(this.activeHutang.remaining);
                     if (!Number.isFinite(hRemaining) || hRemaining < 0) {
-                      this.showAppAlert('Sisa hutang tidak valid.');
+                        this.showAppAlert('Sisa hutang tidak valid.');
                         return;
                     }
 
                     // 2. Cari PO Terkait
                     const po = this.pembelianList.find(p => p.poNo === this.activeHutang.poNo);
                     if (!po) {
-                      this.showAppAlert('Data pembelian terkait tidak ditemukan. Pembayaran tidak dapat diproses.');
+                        this.showAppAlert('Data pembelian terkait tidak ditemukan. Pembayaran tidak dapat diproses.');
                         return;
                     }
 
                     // 3. Validasi Remaining PO
                     const poRemaining = Number(po.remaining);
                     if (!Number.isFinite(poRemaining) || poRemaining < 0) {
-                      this.showAppAlert('Sisa tagihan pembelian tidak valid.');
+                        this.showAppAlert('Sisa tagihan pembelian tidak valid.');
                         return;
                     }
 
                     // 4. Validasi Konsistensi Hutang ↔ PO
                     if (Math.abs(hRemaining - poRemaining) > 0.01) {
-                      this.showAppAlert('Data Hutang dan Pembelian tidak sesuai. Pembayaran belum dapat diproses. Silakan periksa data pembelian.');
+                        this.showAppAlert('Data Hutang dan Pembelian tidak sesuai. Pembayaran belum dapat diproses. Silakan periksa data pembelian.');
                         return;
                     }
 
                     // 5. Validasi Nominal Pembayaran
                     const payAmt = Number(this.payHutangAmount);
                     if (!Number.isFinite(payAmt) || payAmt <= 0) {
-                      this.showAppAlert('Nominal pembayaran harus lebih besar dari 0!');
+                        this.showAppAlert('Nominal pembayaran harus lebih besar dari 0!');
                         return;
                     }
                     if (payAmt > hRemaining) {
-                      this.showAppAlert(`Nominal pembayaran (${this.formatRupiah(payAmt)}) tidak boleh melebihi sisa hutang (${this.formatRupiah(hRemaining)})!`);
+                        this.showAppAlert(`Nominal pembayaran (${this.formatRupiah(payAmt)}) tidak boleh melebihi sisa hutang (${this.formatRupiah(hRemaining)})!`);
                         return;
                     }
 
@@ -7336,28 +7245,28 @@
 
                     if (!Number.isFinite(hTotal) || hTotal < 0 || !Number.isFinite(poTotal) || poTotal < 0 ||
                         !Number.isFinite(hPaid) || hPaid < 0 || !Number.isFinite(poPaid) || poPaid < 0) {
-                      this.showAppAlert('Data total atau terbayar pada tagihan hutang tidak valid.');
+                        this.showAppAlert('Data total atau terbayar pada tagihan hutang tidak valid.');
                         return;
                     }
 
                     if (Math.abs(hTotal - (hPaid + hRemaining)) > 0.01) {
-                      this.showAppAlert('Data Hutang tidak konsisten: Total, Terbayar, dan Sisa tidak sesuai. Pembayaran tidak dapat diproses.');
+                        this.showAppAlert('Data Hutang tidak konsisten: Total, Terbayar, dan Sisa tidak sesuai. Pembayaran tidak dapat diproses.');
                         return;
                     }
 
                     if (Math.abs(poTotal - (poPaid + poRemaining)) > 0.01) {
-                      this.showAppAlert('Data Pembelian tidak konsisten: Total, Terbayar, dan Sisa tidak sesuai. Pembayaran tidak dapat diproses.');
+                        this.showAppAlert('Data Pembelian tidak konsisten: Total, Terbayar, dan Sisa tidak sesuai. Pembayaran tidak dapat diproses.');
                         return;
                     }
 
                     if ((hPaid + payAmt > hTotal) || (poPaid + payAmt > poTotal)) {
-                      this.showAppAlert('Total pembayaran melebihi total tagihan hutang.');
+                        this.showAppAlert('Total pembayaran melebihi total tagihan hutang.');
                         return;
                     }
 
                     let newRemaining = hRemaining - payAmt;
                     if (!Number.isFinite(newRemaining) || newRemaining < 0) {
-                      this.showAppAlert('Perhitungan sisa pembayaran tidak valid.');
+                        this.showAppAlert('Perhitungan sisa pembayaran tidak valid.');
                         return;
                     }
                     if (newRemaining < 0.01) newRemaining = 0;
@@ -7376,7 +7285,7 @@
 
                     const payableCoa = (this.accountingCOA || []).find(c => c.code === '2-1110');
                     if (!payableCoa || !payableCoa.id) {
-                      this.showAppAlert('Bagan akun Hutang Usaha Supplier (2-1110) tidak ditemukan di database. Pembayaran dibatalkan.');
+                        this.showAppAlert('Bagan akun Hutang Usaha Supplier (2-1110) tidak ditemukan di database. Pembayaran dibatalkan.');
                         return;
                     }
                     const payableCoaId = Number(payableCoa.id);
@@ -7392,13 +7301,13 @@
                     }
 
                     if (!paymentAccObj) {
-                      this.showAppAlert('Akun pembayaran kas/bank untuk metode ' + payMethod + ' tidak terdaftar di sistem. Pembayaran dibatalkan.');
+                        this.showAppAlert('Akun pembayaran kas/bank untuk metode ' + payMethod + ' tidak terdaftar di sistem. Pembayaran dibatalkan.');
                         return;
                     }
 
                     const paymentCoaId = Number(paymentAccObj.chart_of_account_id || (paymentAccObj.chart_of_accounts ? paymentAccObj.chart_of_accounts.id : null));
                     if (!paymentCoaId) {
-                      this.showAppAlert('Akun kas / bank ' + paymentAccObj.name + ' tidak memiliki relasi COA yang valid. Pembayaran dibatalkan.');
+                        this.showAppAlert('Akun kas / bank ' + paymentAccObj.name + ' tidak memiliki relasi COA yang valid. Pembayaran dibatalkan.');
                         return;
                     }
                     const payAccountId = Number(paymentAccObj.id);
@@ -7474,7 +7383,7 @@
                                 .insert({
                                     po_no: po.poNo,
                                     supplier_name: po.supplierName || this.activeHutang.supplierName || 'Supplier',
-                                    due_date: '30 Hari',
+                                    due_date: null,
                                     status: newStatus,
                                     total: hTotal,
                                     paid: newPaid,
@@ -7538,7 +7447,7 @@
                                 await supabaseClient.from('payment_history').delete().eq('id', insertedPayHistId);
                             } catch (cErr) { console.error('Cleanup payment_history error:', cErr); }
                         }
-                      this.showAppAlert('Gagal memproses pembayaran / posting jurnal hutang di database: ' + (payErr.message || payErr) + '. Pembayaran dibatalkan.');
+                        this.showAppAlert('Gagal memproses pembayaran / posting jurnal hutang di database: ' + (payErr.message || payErr) + '. Pembayaran dibatalkan.');
                         return;
                     }
 
@@ -7571,7 +7480,7 @@
                 // VOID TRANSACTION
                 async promptVoidTransaction(trx) {
                     if (!supabaseClient || !this.isAuthenticated || !this.currentUser) {
-                      this.showAppAlert('Sesi pengguna tidak siap atau belum login. Pembatalan transaksi dibatalkan.');
+                        this.showAppAlert('Sesi pengguna tidak siap atau belum login. Pembatalan transaksi dibatalkan.');
                         return;
                     }
 
@@ -7580,22 +7489,22 @@
                     }
 
                     if (!trx) {
-                      this.showAppAlert('Data transaksi tidak valid.');
+                        this.showAppAlert('Data transaksi tidak valid.');
                         return;
                     }
 
                     if (trx.status === 'Void') {
-                      this.showAppAlert(`Transaksi ${trx.code || ''} sudah berstatus VOID dan tidak dapat dibatalkan lagi.`);
+                        this.showAppAlert(`Transaksi ${trx.code || ''} sudah berstatus VOID dan tidak dapat dibatalkan lagi.`);
                         return;
                     }
 
                     if (trx.type === 'Beli') {
-                      this.showAppAlert('Pembatalan transaksi pembelian belum tersedia. Transaksi pembelian tidak dapat di-VOID agar stok dan hutang supplier tetap aman.');
+                        this.showAppAlert('Pembatalan transaksi pembelian belum tersedia. Transaksi pembelian tidak dapat di-VOID agar stok dan hutang supplier tetap aman.');
                         return;
                     }
 
                     if (trx.type !== 'Jual') {
-                      this.showAppAlert(`Transaksi jenis "${trx.type}" tidak dapat dibatalkan.`);
+                        this.showAppAlert(`Transaksi jenis "${trx.type}" tidak dapat dibatalkan.`);
                         return;
                     }
 
@@ -7631,7 +7540,7 @@
 
                             if (lookupErr) {
                                 console.error('Error looking up original journal:', lookupErr);
-                              this.showAppAlert('Gagal memverifikasi status jurnal transaksi di database: ' + (lookupErr.message || lookupErr) + '. Pembatalan dibatalkan.');
+                                this.showAppAlert('Gagal memverifikasi status jurnal transaksi di database: ' + (lookupErr.message || lookupErr) + '. Pembatalan dibatalkan.');
                                 return;
                             }
 
@@ -7650,7 +7559,7 @@
 
                             if (revErr) {
                                 console.error('Error reversing journal entry:', revErr);
-                              this.showAppAlert('Gagal membuat jurnal pembalik (reversal) di database: ' + (revErr.message || revErr) + '. Pembatalan transaksi dibatalkan.');
+                                this.showAppAlert('Gagal membuat jurnal pembalik (reversal) di database: ' + (revErr.message || revErr) + '. Pembatalan transaksi dibatalkan.');
                                 return;
                             }
                         }
@@ -7668,7 +7577,7 @@
 
                             if (updateTrxErr) {
                                 console.error('Error updating transaction status to VOID in Supabase:', updateTrxErr);
-                              this.showAppAlert('Gagal meng-update status VOID transaksi di database: ' + (updateTrxErr.message || updateTrxErr) + '. Pembatalan dibatalkan.');
+                                this.showAppAlert('Gagal meng-update status VOID transaksi di database: ' + (updateTrxErr.message || updateTrxErr) + '. Pembatalan dibatalkan.');
                                 return;
                             }
                         }
@@ -7683,7 +7592,7 @@
 
                                 if (!prod) {
                                     if (item.type === 'barang') {
-                                      this.showAppAlert(`Produk "${item.name || 'Barang'}" tidak ditemukan di database. VOID dibatalkan demi keamanan inventaris.`);
+                                        this.showAppAlert(`Produk "${item.name || 'Barang'}" tidak ditemukan di database. VOID dibatalkan demi keamanan inventaris.`);
                                         return;
                                     }
                                     continue;
@@ -7694,13 +7603,13 @@
                                     const itemQty = Number(item.qty);
 
                                     if (!Number.isFinite(currentStock) || currentStock < 0 || !Number.isFinite(itemQty) || itemQty <= 0) {
-                                      this.showAppAlert(`Data stok atau kuantiti untuk "${prod.name}" tidak valid. VOID dibatalkan.`);
+                                        this.showAppAlert(`Data stok atau kuantiti untuk "${prod.name}" tidak valid. VOID dibatalkan.`);
                                         return;
                                     }
 
                                     const newStock = currentStock + itemQty;
                                     if (!Number.isFinite(newStock) || newStock < 0) {
-                                      this.showAppAlert(`Perhitungan pengembalian stok untuk "${prod.name}" tidak valid. VOID dibatalkan.`);
+                                        this.showAppAlert(`Perhitungan pengembalian stok untuk "${prod.name}" tidak valid. VOID dibatalkan.`);
                                         return;
                                     }
 
@@ -7779,10 +7688,10 @@
                         await this.loadMasterDataFromSupabase();
                         await this.loadAccountingDataFromSupabase();
 
-                      this.showAppAlert(`Transaksi ${trx.code} berhasil dibatalkan (VOID). Stok barang telah dikembalikan ke database.`);
+                        this.showAppAlert(`Transaksi ${trx.code} berhasil dibatalkan (VOID). Stok barang telah dikembalikan ke database.`);
                     } catch (error) {
                         console.error('Void transaction error:', error);
-                      this.showAppAlert('Terjadi kesalahan saat memproses VOID transaksi.');
+                        this.showAppAlert('Terjadi kesalahan saat memproses VOID transaksi.');
                     } finally {
                         this.isVoiding = false;
                     }
@@ -7807,7 +7716,7 @@
                     const newStock = currentStock + changeAmount;
                     if (!Number.isFinite(newStock) || newStock < 0) {
                         if (newStock < 0) {
-                          this.showAppAlert(`Stok tidak mencukupi untuk dikurangi. Stok saat ini: ${currentStock}.`);
+                            this.showAppAlert(`Stok tidak mencukupi untuk dikurangi. Stok saat ini: ${currentStock}.`);
                         }
                         return;
                     }
@@ -7855,7 +7764,7 @@
                         this.saveDataToStorage();
                     } catch (error) {
                         console.error('Adjust stock error:', error);
-                      this.showAppAlert('Gagal menyimpan perubahan stok ke database. Stok tidak diubah di aplikasi.');
+                        this.showAppAlert('Gagal menyimpan perubahan stok ke database. Stok tidak diubah di aplikasi.');
                     }
                 },
 
@@ -7899,7 +7808,7 @@
                     );
 
                     if (isUsedInTrx || isUsedInQt || isUsedInInv || isUsedInPo) {
-                      this.showAppAlert('Produk ini sudah digunakan dalam data transaksi sehingga tidak bisa dihapus. Silakan edit produk jika ingin mengubah nama, harga, atau stok.');
+                        this.showAppAlert('Produk ini sudah digunakan dalam data transaksi sehingga tidak bisa dihapus. Silakan edit produk jika ingin mengubah nama, harga, atau stok.');
                         return;
                     }
 
@@ -7916,7 +7825,7 @@
                         this.saveDataToStorage();
                     } catch (error) {
                         console.error('Delete product error:', error);
-                      this.showAppAlert('Gagal menghapus produk dari database. Data aplikasi tidak diubah.');
+                        this.showAppAlert('Gagal menghapus produk dari database. Data aplikasi tidak diubah.');
                     }
                 },
 
@@ -7925,19 +7834,19 @@
 
                     const name = (this.newItem.name || '').trim();
                     if (!name) {
-                      this.showAppAlert('Nama peralatan / jasa wajib diisi.');
+                        this.showAppAlert('Nama peralatan / jasa wajib diisi.');
                         return;
                     }
 
                     const price = Number(this.newItem.price);
                     if (!Number.isFinite(price) || price <= 0) {
-                      this.showAppAlert('Harga jual tidak boleh 0 atau negatif.');
+                        this.showAppAlert('Harga jual tidak boleh 0 atau negatif.');
                         return;
                     }
 
                     const costPrice = Number(this.newItem.costPrice || 0);
                     if (!Number.isFinite(costPrice) || costPrice < 0) {
-                      this.showAppAlert('Harga beli tidak boleh negatif.');
+                        this.showAppAlert('Harga beli tidak boleh negatif.');
                         return;
                     }
 
@@ -7945,7 +7854,7 @@
                     const stock = type === 'jasa' ? 0 : Number(this.newItem.stock || 0);
 
                     if (type === 'barang' && (!Number.isFinite(stock) || stock < 0)) {
-                      this.showAppAlert('Stok tidak boleh negatif.');
+                        this.showAppAlert('Stok tidak boleh negatif.');
                         return;
                     }
 
@@ -7953,11 +7862,11 @@
                         if (this.isEditingProduct && this.editingProductId !== null) {
                             const existing = this.products.find(p => Number(p.id) === Number(this.editingProductId));
                             if (!existing) {
-                              this.showAppAlert('Produk yang akan diedit tidak ditemukan.');
+                                this.showAppAlert('Produk yang akan diedit tidak ditemukan.');
                                 return;
                             }
                             if (existing.type !== type) {
-                              this.showAppAlert('Tipe item tidak dapat diubah setelah item dibuat. Jika tipe item salah, buat item baru dengan tipe yang benar.');
+                                this.showAppAlert('Tipe item tidak dapat diubah setelah item dibuat. Jika tipe item salah, buat item baru dengan tipe yang benar.');
                                 return;
                             }
 
@@ -8047,7 +7956,7 @@
                     } catch (error) {
                         console.error('Save product error:', error);
                         const detailMsg = error?.message || error?.details || 'Terjadi kesalahan koneksi atau otorisasi database.';
-                      this.showAppAlert(`Gagal menyimpan produk ke database: ${detailMsg}`);
+                        this.showAppAlert(`Gagal menyimpan produk ke database: ${detailMsg}`);
                     }
                 },
 
@@ -8061,25 +7970,25 @@
 
                     const clientName = (this.newProject.clientName || '').trim();
                     if (!clientName) {
-                      this.showAppAlert('Nama klien wajib diisi.');
+                        this.showAppAlert('Nama klien wajib diisi.');
                         return;
                     }
 
                     const location = (this.newProject.location || '').trim();
                     if (!location) {
-                      this.showAppAlert('Lokasi proyek wajib diisi.');
+                        this.showAppAlert('Lokasi proyek wajib diisi.');
                         return;
                     }
 
                     const scope = (this.newProject.scope || '').trim();
                     if (!scope) {
-                      this.showAppAlert('Lingkup pekerjaan wajib diisi.');
+                        this.showAppAlert('Lingkup pekerjaan wajib diisi.');
                         return;
                     }
 
                     const val = Number(this.newProject.value);
                     if (!Number.isFinite(val) || val < 0) {
-                      this.showAppAlert('Nilai proyek tidak valid. Masukkan nominal 0 atau lebih.');
+                        this.showAppAlert('Nilai proyek tidak valid. Masukkan nominal 0 atau lebih.');
                         return;
                     }
 
@@ -8107,7 +8016,7 @@
                         this.showAddProjectModal = false;
                     } catch (error) {
                         console.error('Save project error:', error);
-                      this.showAppAlert('Gagal menyimpan proyek ke database. Data aplikasi tidak diubah.');
+                        this.showAppAlert('Gagal menyimpan proyek ke database. Data aplikasi tidak diubah.');
                     }
                 },
 
@@ -8136,7 +8045,7 @@
                         this.saveDataToStorage();
                     } catch (error) {
                         console.error('Toggle project status error:', error);
-                      this.showAppAlert('Gagal menyimpan status proyek ke database. Status tidak diubah.');
+                        this.showAppAlert('Gagal menyimpan status proyek ke database. Status tidak diubah.');
                     }
                 },
 
@@ -8212,7 +8121,7 @@
 
                 printQuotationPdf(qtInput) {
                     if (!qtInput) {
-                      this.showAppAlert('Data penawaran tidak ditemukan.');
+                        this.showAppAlert('Data penawaran tidak ditemukan.');
                         return;
                     }
                     let qt = qtInput;
@@ -8224,7 +8133,7 @@
                         const html = this.generateQuotationHtml(qt);
                         const printWindow = window.open('', '_blank');
                         if (!printWindow) {
-                          this.showAppAlert('Jendela cetak terblokir oleh browser. Harap izinkan pop-up (pop-up blocker) pada browser untuk mencetak penawaran.');
+                            this.showAppAlert('Jendela cetak terblokir oleh browser. Harap izinkan pop-up (pop-up blocker) pada browser untuk mencetak penawaran.');
                             return;
                         }
                         printWindow.document.open();
@@ -8240,7 +8149,7 @@
                         }, 350);
                     } catch (e) {
                         console.error('Gagal mencetak penawaran PDF:', e);
-                      this.showAppAlert('Terjadi kesalahan saat memproses dokumen penawaran: ' + (e.message || e));
+                        this.showAppAlert('Terjadi kesalahan saat memproses dokumen penawaran: ' + (e.message || e));
                     }
                 },
 
@@ -8572,7 +8481,7 @@
 
                 printInvoicePdf(invInput) {
                     if (!invInput) {
-                      this.showAppAlert('Data invoice tidak ditemukan.');
+                        this.showAppAlert('Data invoice tidak ditemukan.');
                         return;
                     }
 
@@ -8587,7 +8496,7 @@
                         const html = this.generateInvoiceHtml(inv);
                         const printWindow = window.open('', '_blank');
                         if (!printWindow) {
-                          this.showAppAlert('Jendela cetak terblokir oleh browser. Harap izinkan pop-up (pop-up blocker) pada browser untuk mencetak invoice.');
+                            this.showAppAlert('Jendela cetak terblokir oleh browser. Harap izinkan pop-up (pop-up blocker) pada browser untuk mencetak invoice.');
                             return;
                         }
 
@@ -8605,7 +8514,7 @@
                         }, 350);
                     } catch (e) {
                         console.error('Gagal mencetak invoice PDF:', e);
-                      this.showAppAlert('Terjadi kesalahan saat memproses dokumen invoice: ' + (e.message || e));
+                        this.showAppAlert('Terjadi kesalahan saat memproses dokumen invoice: ' + (e.message || e));
                     }
                 },
 
@@ -9514,7 +9423,7 @@
                 async saveCoa() {
                     if (!supabaseClient || !this.currentUser) return;
                     if (this.currentUser.role !== 'owner') {
-                      this.showAppAlert('Hanya Owner yang berhak menambah atau mengubah Bagan Akun (COA).');
+                        this.showAppAlert('Hanya Owner yang berhak menambah atau mengubah Bagan Akun (COA).');
                         return;
                     }
 
@@ -9527,19 +9436,19 @@
                     const is_active = Boolean(this.coaForm.is_active);
 
                     if (!code) {
-                      this.showAppAlert('Kode akun wajib diisi (misal: 6-1100).');
+                        this.showAppAlert('Kode akun wajib diisi (misal: 6-1100).');
                         return;
                     }
                     if (!name) {
-                      this.showAppAlert('Nama akun wajib diisi.');
+                        this.showAppAlert('Nama akun wajib diisi.');
                         return;
                     }
                     if (!['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'COGS', 'EXPENSE'].includes(category)) {
-                      this.showAppAlert('Kategori akun tidak valid.');
+                        this.showAppAlert('Kategori akun tidak valid.');
                         return;
                     }
                     if (!['DEBIT', 'CREDIT'].includes(normal_balance)) {
-                      this.showAppAlert('Saldo normal harus DEBIT atau CREDIT.');
+                        this.showAppAlert('Saldo normal harus DEBIT atau CREDIT.');
                         return;
                     }
 
@@ -9560,7 +9469,7 @@
                                 .eq('id', this.editingCoaId);
 
                             if (error) throw error;
-                          this.showAppAlert('Akun COA berhasil diperbarui.');
+                            this.showAppAlert('Akun COA berhasil diperbarui.');
                         } else {
                             const { error } = await supabaseClient
                                 .from('chart_of_accounts')
@@ -9575,21 +9484,21 @@
                                 });
 
                             if (error) throw error;
-                          this.showAppAlert('Akun COA baru berhasil ditambahkan.');
+                            this.showAppAlert('Akun COA baru berhasil ditambahkan.');
                         }
 
                         this.showCoaModal = false;
                         await this.fetchCOA();
                     } catch (err) {
                         console.error('Error saving COA:', err);
-                      this.showAppAlert('Gagal menyimpan akun COA: ' + (err.message || err));
+                        this.showAppAlert('Gagal menyimpan akun COA: ' + (err.message || err));
                     }
                 },
 
                 async toggleCoaStatus(item) {
                     if (!supabaseClient || !this.currentUser || !item) return;
                     if (this.currentUser.role !== 'owner') {
-                      this.showAppAlert('Hanya Owner yang berhak mengaktifkan/menonaktifkan akun COA.');
+                        this.showAppAlert('Hanya Owner yang berhak mengaktifkan/menonaktifkan akun COA.');
                         return;
                     }
 
@@ -9608,10 +9517,10 @@
 
                         if (error) throw error;
                         item.is_active = nextStatus;
-                      this.showAppAlert('Status akun berhasil diubah menjadi: ' + (nextStatus ? 'Aktif' : 'Nonaktif') + '.');
+                        this.showAppAlert('Status akun berhasil diubah menjadi: ' + (nextStatus ? 'Aktif' : 'Nonaktif') + '.');
                     } catch (err) {
                         console.error('Error updating COA status:', err);
-                      this.showAppAlert('Gagal mengubah status akun: ' + (err.message || err));
+                        this.showAppAlert('Gagal mengubah status akun: ' + (err.message || err));
                     }
                 },
 
@@ -9634,7 +9543,7 @@
                 async saveExpense() {
                     if (!supabaseClient || !this.currentUser) return;
                     if (this.currentUser.role !== 'owner' && this.currentUser.role !== 'admin') {
-                      this.showAppAlert('Hanya Owner dan Admin yang dapat mencatat beban operasional.');
+                        this.showAppAlert('Hanya Owner dan Admin yang dapat mencatat beban operasional.');
                         return;
                     }
                     if (this.isSavingExpense) return;
@@ -9648,27 +9557,27 @@
                     const note = String(this.expenseForm.note || '').trim();
 
                     if (!date) {
-                      this.showAppAlert('Tanggal pengeluaran beban wajib diisi.');
+                        this.showAppAlert('Tanggal pengeluaran beban wajib diisi.');
                         return;
                     }
                     if (!coaId) {
-                      this.showAppAlert('Pilih akun beban (COA).');
+                        this.showAppAlert('Pilih akun beban (COA).');
                         return;
                     }
                     if (!payAccId) {
-                      this.showAppAlert('Pilih akun kas / bank sumber pembayaran.');
+                        this.showAppAlert('Pilih akun kas / bank sumber pembayaran.');
                         return;
                     }
                     if (!Number.isFinite(amount) || amount <= 0) {
-                      this.showAppAlert('Nominal beban harus lebih besar dari 0.');
+                        this.showAppAlert('Nominal beban harus lebih besar dari 0.');
                         return;
                     }
                     if (!payee) {
-                      this.showAppAlert('Penerima pembayaran (payee) wajib diisi (misal: PLN, Staf, Toko).');
+                        this.showAppAlert('Penerima pembayaran (payee) wajib diisi (misal: PLN, Staf, Toko).');
                         return;
                     }
                     if (!note) {
-                      this.showAppAlert('Keterangan pengeluaran beban wajib diisi.');
+                        this.showAppAlert('Keterangan pengeluaran beban wajib diisi.');
                         return;
                     }
 
@@ -9677,7 +9586,7 @@
                     const paymentCoaId = paymentAcc ? Number(paymentAcc.chart_of_account_id || (paymentAcc.chart_of_accounts ? paymentAcc.chart_of_accounts.id : null)) : null;
 
                     if (!paymentAcc || !paymentCoaId) {
-                      this.showAppAlert('Akun kas / bank yang dipilih tidak memiliki relasi bagan akun (COA) yang valid. Transaksi dibatalkan.');
+                        this.showAppAlert('Akun kas / bank yang dipilih tidak memiliki relasi bagan akun (COA) yang valid. Transaksi dibatalkan.');
                         return;
                     }
 
@@ -9745,13 +9654,13 @@
                         }
 
                         const jrnNo = (Array.isArray(journalData) && journalData.length > 0) ? journalData[0].journal_no : 'POSTED';
-                      this.showAppAlert('Beban operasional ' + expenseNo + ' sebesar ' + this.formatRupiah(amount) + ' berhasil dicatat dan diposting ke Jurnal Umum (' + jrnNo + ').');
+                        this.showAppAlert('Beban operasional ' + expenseNo + ' sebesar ' + this.formatRupiah(amount) + ' berhasil dicatat dan diposting ke Jurnal Umum (' + jrnNo + ').');
 
                         this.showExpenseModal = false;
                         await this.loadAccountingDataFromSupabase();
                     } catch (err) {
                         console.error('Error saving expense:', err);
-                      this.showAppAlert('Gagal menyimpan beban operasional: ' + (err.message || err));
+                        this.showAppAlert('Gagal menyimpan beban operasional: ' + (err.message || err));
                     } finally {
                         this.isSavingExpense = false;
                     }
@@ -9781,7 +9690,7 @@
                 async saveEquity() {
                     if (!supabaseClient || !this.currentUser) return;
                     if (this.currentUser.role !== 'owner') {
-                      this.showAppAlert('Hanya Owner yang berhak mencatat transaksi Modal atau Prive.');
+                        this.showAppAlert('Hanya Owner yang berhak mencatat transaksi Modal atau Prive.');
                         return;
                     }
                     if (this.isSavingEquity) return;
@@ -9794,27 +9703,27 @@
                     const note = String(this.equityForm.note || '').trim();
 
                     if (!date) {
-                      this.showAppAlert('Tanggal transaksi wajib diisi.');
+                        this.showAppAlert('Tanggal transaksi wajib diisi.');
                         return;
                     }
                     if (!['CAPITAL_IN', 'DRAWING_OUT'].includes(type)) {
-                      this.showAppAlert('Jenis transaksi ekuitas tidak valid.');
+                        this.showAppAlert('Jenis transaksi ekuitas tidak valid.');
                         return;
                     }
                     if (!coaId) {
-                      this.showAppAlert('Pilih akun ekuitas (COA).');
+                        this.showAppAlert('Pilih akun ekuitas (COA).');
                         return;
                     }
                     if (!payAccId) {
-                      this.showAppAlert('Pilih akun kas / bank terkait.');
+                        this.showAppAlert('Pilih akun kas / bank terkait.');
                         return;
                     }
                     if (!Number.isFinite(amount) || amount <= 0) {
-                      this.showAppAlert('Nominal harus lebih besar dari 0.');
+                        this.showAppAlert('Nominal harus lebih besar dari 0.');
                         return;
                     }
                     if (!note) {
-                      this.showAppAlert('Keterangan transaksi wajib diisi.');
+                        this.showAppAlert('Keterangan transaksi wajib diisi.');
                         return;
                     }
 
@@ -9823,7 +9732,7 @@
                     const paymentCoaId = paymentAcc ? Number(paymentAcc.chart_of_account_id || (paymentAcc.chart_of_accounts ? paymentAcc.chart_of_accounts.id : null)) : null;
 
                     if (!paymentAcc || !paymentCoaId) {
-                      this.showAppAlert('Akun kas / bank yang dipilih tidak memiliki relasi bagan akun (COA) yang valid. Transaksi dibatalkan.');
+                        this.showAppAlert('Akun kas / bank yang dipilih tidak memiliki relasi bagan akun (COA) yang valid. Transaksi dibatalkan.');
                         return;
                     }
 
@@ -9911,13 +9820,13 @@
                         }
 
                         const jrnNo = (Array.isArray(journalData) && journalData.length > 0) ? journalData[0].journal_no : 'POSTED';
-                      this.showAppAlert('Transaksi ekuitas ' + equityNo + ' sebesar ' + this.formatRupiah(amount) + ' berhasil dicatat dan diposting ke Jurnal Umum (' + jrnNo + ').');
+                        this.showAppAlert('Transaksi ekuitas ' + equityNo + ' sebesar ' + this.formatRupiah(amount) + ' berhasil dicatat dan diposting ke Jurnal Umum (' + jrnNo + ').');
 
                         this.showEquityModal = false;
                         await this.loadAccountingDataFromSupabase();
                     } catch (err) {
                         console.error('Error saving equity transaction:', err);
-                      this.showAppAlert('Gagal menyimpan transaksi ekuitas: ' + (err.message || err));
+                        this.showAppAlert('Gagal menyimpan transaksi ekuitas: ' + (err.message || err));
                     } finally {
                         this.isSavingEquity = false;
                     }
