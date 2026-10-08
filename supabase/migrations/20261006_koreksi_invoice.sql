@@ -437,10 +437,10 @@ BEGIN
 
         INSERT INTO public.invoice_items (
             invoice_id, product_id, category, unit, price, qty, 
-            discount_type, discount_value, discount_amount, subtotal
+            discount_type, discount_value, discount_amount
         ) VALUES (
             v_new_inv_id, (v_item->>'product_id')::BIGINT, v_item->>'category', v_item->>'unit',
-            v_item_price, v_item_qty, v_item_disc_type, v_item_disc_val, v_item_disc_amt, v_item_subtotal_calc
+            v_item_price, v_item_qty, v_item_disc_type, v_item_disc_val, v_item_disc_amt
         );
     END LOOP;
 

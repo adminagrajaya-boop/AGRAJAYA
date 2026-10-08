@@ -3614,8 +3614,8 @@
 
     <!-- ALPINE.JS APPLICATION LOGIC -->
     <script>
-        // PWA Service Worker & Stale Cache Invalidation (v5.4)
-        const CURRENT_APP_VERSION = 'v5.4';
+        // PWA Service Worker & Stale Cache Invalidation (v5.5)
+        const CURRENT_APP_VERSION = 'v5.5';
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', async () => {
                 try {
@@ -5492,7 +5492,129 @@
                             p_new_inv_items: validatedItems
                         });
 
-                        if (rpcErr) throw rpcErr;
+                        if (rpcErr) {
+                            const errStr = rpcErr.message || String(rpcErr);
+                            if (errStr.includes('subtotal') || errStr.includes('non-DEFAULT value')) {
+                                console.warn('[Correction Engine] RPC subtotal column mismatch. Executing client-side correction fallback...');
+                                let itemsSum = 0;
+                                const itemsPayload = validatedItems.map(item => {
+                                    const prod = (this.products || []).find(p => Number(p.id) === Number(item.product_id));
+                                    const q = Number(item.qty) || 0;
+                                    const p = Number(item.price) || 0;
+                                    const discVal = Number(item.discount_value) || 0;
+                                    const discType = item.discount_type || 'none';
+                                    let discAmt = 0;
+                                    if (discType === 'percentage') discAmt = Math.round((q * p) * (discVal / 100.0) * 100) / 100;
+                                    else if (discType === 'fixed' || discType === 'nominal') discAmt = discVal;
+                                    const lineNet = Math.max(0, (q * p) - discAmt);
+                                    itemsSum += lineNet;
+
+                                    return {
+                                        product_id: Number.isSafeInteger(Number(item.product_id)) ? Number(item.product_id) : null,
+                                        category: item.category || 'General',
+                                        unit: item.unit || 'Unit',
+                                        price: p,
+                                        cost_price: prod && Number.isFinite(Number(prod.costPrice)) ? Number(prod.costPrice) : 0,
+                                        qty: q,
+                                        discount_type: discType,
+                                        discount_value: discVal,
+                                        discount_amount: discAmt
+                                        // OMIT subtotal because subtotal is GENERATED ALWAYS AS (qty * price) STORED in Postgres
+                                    };
+                                });
+
+                                const hdrSubtotal = itemsSum;
+                                const hdrDiscount = Number(this.newQt.discountTotal || 0);
+                                const newInvTotal = Math.max(0, hdrSubtotal - hdrDiscount);
+
+                                const { data: newInvInsertData, error: newInvErr } = await supabaseClient
+                                    .from('invoices')
+                                    .insert({
+                                        inv_no: candidateInvNo,
+                                        customer_id: customerIdNum,
+                                        customer_name: this.newQt.customerName,
+                                        customer_farm: this.newQt.projectName,
+                                        due_date: this.newQt.validUntil || oldInv.dueDate || oldInv.due_date || null,
+                                        invoice_date: dateStr,
+                                        subtotal: hdrSubtotal,
+                                        discount_total: hdrDiscount,
+                                        total: newInvTotal,
+                                        paid_amount: 0,
+                                        remaining: newInvTotal,
+                                        status: 'Belum Bayar',
+                                        project_id: projectIdNum,
+                                        quotation_id: oldInv.quotationId,
+                                        corrected_from: oldInv.id || oldInv.supabaseId,
+                                        created_by: this.currentUser?.id || 'OWNER'
+                                    })
+                                    .select('id, inv_no')
+                                    .single();
+
+                                if (newInvErr) throw newInvErr;
+                                const insertedNewInvId = newInvInsertData.id;
+
+                                const itemsWithInvId = itemsPayload.map(i => ({ ...i, invoice_id: insertedNewInvId }));
+                                const { error: itemsInsertErr } = await supabaseClient
+                                    .from('invoice_items')
+                                    .insert(itemsWithInvId);
+
+                                if (itemsInsertErr) {
+                                    await supabaseClient.from('invoices').delete().eq('id', insertedNewInvId);
+                                    throw itemsInsertErr;
+                                }
+
+                                let journalIdToReverse = null;
+                                const { data: jrnData } = await supabaseClient
+                                    .from('journal_entries')
+                                    .select('id')
+                                    .eq('source_type', 'INVOICE')
+                                    .eq('source_code', oldInv.invNo || oldInv.inv_no)
+                                    .eq('status', 'POSTED')
+                                    .eq('is_reversal', false)
+                                    .maybeSingle();
+
+                                if (jrnData) journalIdToReverse = jrnData.id;
+                                if (journalIdToReverse) {
+                                    await supabaseClient.rpc('reverse_journal_entry', {
+                                        p_original_journal_id: journalIdToReverse,
+                                        p_user_id: this.currentUser?.id || 'OWNER',
+                                        p_reversal_reason: `KOREKSI INVOICE ${oldInv.invNo || oldInv.inv_no} -> ${candidateInvNo}`
+                                    });
+                                }
+
+                                await supabaseClient
+                                    .from('invoices')
+                                    .update({ status: 'DIKOREKSI', remaining: 0 })
+                                    .eq('id', oldInv.id || oldInv.supabaseId);
+
+                                await supabaseClient
+                                    .from('receivables')
+                                    .update({ status: 'DIKOREKSI', remaining: 0 })
+                                    .eq('inv_no', oldInv.invNo || oldInv.inv_no);
+
+                                await supabaseClient
+                                    .from('receivables')
+                                    .insert({
+                                        invoice_id: insertedNewInvId,
+                                        inv_no: candidateInvNo,
+                                        customer_id: customerIdNum,
+                                        customer_name: this.newQt.customerName,
+                                        due_date: this.newQt.validUntil || null,
+                                        status: 'Belum Bayar',
+                                        total: newInvTotal,
+                                        paid: 0,
+                                        remaining: newInvTotal
+                                    });
+
+                                await window.showAppAlert('Koreksi Berhasil! Invoice pengganti baru: ' + candidateInvNo);
+                                this.showAddQuotationModal = false;
+                                this.isCorrectInvoiceMode = false;
+                                this.correctingInvoiceObj = null;
+                                await this.loadAccountingDataFromSupabase();
+                                return;
+                            }
+                            throw rpcErr;
+                        }
 
                         await window.showAppAlert('Koreksi Berhasil! Invoice pengganti baru: ' + (rpcData?.new_invoice_no || candidateInvNo));
 
@@ -5510,7 +5632,7 @@
                         } else if (friendlyErr.includes('HAS_ACTIVE_PAYMENTS') || friendlyErr.includes('memiliki pembayaran aktif')) {
                             friendlyErr = `⚠️ Koreksi Ditolak\n\nInvoice ini memiliki pembayaran aktif. Silakan VOID pembayaran di menu Riwayat Bayar terlebih dahulu sebelum melakukan koreksi.\n\nData invoice belum diubah.`;
                         } else {
-                            friendlyErr = `⚠️ Koreksi Gagal: ${friendlyErr}\n\nData invoice belum diubah.`;
+                            friendlyErr = `Koreksi Invoice Belum Dapat Dilanjutkan\n\nTerjadi kendala saat menyimpan koreksi invoice.\n\nData invoice tetap aman dan tidak berubah.\n\nSilakan coba kembali.`;
                         }
                         await window.showAppAlert(friendlyErr, 'Koreksi Invoice', 'warning');
                     } finally {
