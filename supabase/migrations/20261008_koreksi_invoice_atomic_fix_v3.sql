@@ -148,6 +148,9 @@ BEGIN
         END IF;
     END IF;
 
+    v_trx_id := (p_new_inv_data->>'transaction_id')::BIGINT;
+    IF v_trx_id IS NULL THEN v_trx_id := v_old_inv.transaction_id; END IF;
+
     -- [7] FIELD FALLBACKS & PARSING
     v_customer_farm_raw := trim(p_new_inv_data->>'customer_farm');
     IF v_customer_farm_raw IS NULL OR v_customer_farm_raw = '' THEN
