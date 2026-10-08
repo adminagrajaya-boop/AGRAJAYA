@@ -3614,8 +3614,8 @@
 
     <!-- ALPINE.JS APPLICATION LOGIC -->
     <script>
-        // PWA Service Worker & Stale Cache Invalidation (v5.3)
-        const CURRENT_APP_VERSION = 'v5.3';
+        // PWA Service Worker & Stale Cache Invalidation (v5.4)
+        const CURRENT_APP_VERSION = 'v5.4';
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', async () => {
                 try {
@@ -5458,7 +5458,7 @@
                         }
                         validatedItems.push({
                             product_id: prod.id,
-                            category: prod.category || item.category || 'General',
+                            category: (prod.category && (prod.category.toUpperCase().includes('JASA') || prod.category.toUpperCase().includes('SERVIS') || prod.category.toUpperCase().includes('SERVICE') || prod.category.toUpperCase().includes('INSTALASI') || prod.category.toUpperCase().includes('LAYANAN'))) ? 'Jasa' : 'Barang',
                             unit: prod.unit || item.unit || 'Unit',
                             qty: qty,
                             price: price,
@@ -5506,7 +5506,7 @@
                         let friendlyErr = err?.message || String(err);
                         if (friendlyErr.includes('UNKNOWN_REVENUE_CATEGORY')) {
                             const categoryName = friendlyErr.match(/Kategori produk "(.*?)"/)?.[1] || 'terkait';
-                            friendlyErr = `⚠️ Koreksi Belum Dapat Diproses\n\nProduk "${categoryName}" belum memiliki mapping akun pendapatan di sistem.\n\nData invoice belum diubah.\n\nSilakan hubungi Admin untuk melengkapi mapping kategori produk.`;
+                            friendlyErr = `Koreksi Invoice Belum Dapat Dilanjutkan\n\nPengaturan produk ini belum lengkap untuk proses koreksi.\n\nSilakan lengkapi pengaturan produk terlebih dahulu, kemudian coba kembali.\n\nData invoice tetap aman dan tidak berubah.`;
                         } else if (friendlyErr.includes('HAS_ACTIVE_PAYMENTS') || friendlyErr.includes('memiliki pembayaran aktif')) {
                             friendlyErr = `⚠️ Koreksi Ditolak\n\nInvoice ini memiliki pembayaran aktif. Silakan VOID pembayaran di menu Riwayat Bayar terlebih dahulu sebelum melakukan koreksi.\n\nData invoice belum diubah.`;
                         } else {
