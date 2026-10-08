@@ -5468,19 +5468,20 @@
                     }
 
                     const candidateInvNo = this.generateCode('INV', this.invoiceList, 'invCounter') + '-REV';
-                    const projectIdNum = Number.isSafeInteger(Number(oldInv.project_id)) ? Number(oldInv.project_id) : null;
-                    const customerIdNum = Number.isSafeInteger(Number(oldInv.customer_id)) ? Number(oldInv.customer_id) : null;
+                    const projectIdNum = (oldInv.project_id && oldInv.project_id !== 'null' && Number.isSafeInteger(Number(oldInv.project_id))) ? Number(oldInv.project_id) : null;
+                    const customerIdNum = (oldInv.customer_id && oldInv.customer_id !== 'null' && Number.isSafeInteger(Number(oldInv.customer_id))) ? Number(oldInv.customer_id) : null;
+                    const quotationIdVal = oldInv.quotationId || oldInv.quotation_id || null;
 
                     const newInvData = {
                         inv_no: candidateInvNo,
                         customer_id: customerIdNum,
                         customer_name: this.newQt.customerName,
                         customer_farm: this.newQt.projectName,
-                        due_date: this.newQt.validUntil || oldInv.due_date || null,
+                        due_date: this.newQt.validUntil || oldInv.dueDate || oldInv.due_date || null,
                         invoice_date: dateStr,
                         discount_total: Number(this.newQt.discountTotal || 0),
                         project_id: projectIdNum,
-                        quotation_id: oldInv.quotationId,
+                        quotation_id: quotationIdVal,
                         transaction_id: null
                     };
 
@@ -5517,10 +5518,10 @@
                         let friendlyErr = err?.message || String(err);
                         if (friendlyErr.includes('UNKNOWN_REVENUE_CATEGORY')) {
                             friendlyErr = `Koreksi Invoice Belum Dapat Dilanjutkan\n\nPengaturan produk ini belum lengkap untuk proses koreksi.\n\nSilakan lengkapi pengaturan produk terlebih dahulu, kemudian coba kembali.\n\nData invoice tetap aman dan tidak berubah.`;
-                        } else if (friendlyErr.includes('HAS_ACTIVE_PAYMENTS') || friendlyErr.includes('memiliki pembayaran aktif')) {
+                        } else if (friendlyErr.includes('HAS_ACTIVE_PAYMENTS') || friendlyErr.includes('memiliki histori pembayaran aktif') || friendlyErr.includes('memiliki pembayaran aktif')) {
                             friendlyErr = `⚠️ Koreksi Ditolak\n\nInvoice ini memiliki pembayaran aktif. Silakan VOID pembayaran di menu Riwayat Bayar terlebih dahulu sebelum melakukan koreksi.\n\nData invoice belum diubah.`;
                         } else {
-                            friendlyErr = `Koreksi Invoice Belum Dapat Dilanjutkan\n\nTerjadi kendala saat menyimpan koreksi invoice.\n\nData invoice tetap aman dan tidak berubah.\n\nSilakan coba kembali.`;
+                            friendlyErr = `Koreksi Invoice Belum Dapat Dilanjutkan\n\nTerjadi kendala saat menyimpan koreksi invoice:\n\n${err?.message || String(err)}\n\nData invoice tetap aman dan tidak berubah.`;
                         }
                         await window.showAppAlert(friendlyErr, 'Koreksi Invoice', 'warning');
                     } finally {
