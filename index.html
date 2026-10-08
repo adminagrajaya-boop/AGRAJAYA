@@ -841,8 +841,8 @@
                                                 </button>
                                                 <button x-show="inv.status !== 'Void' && inv.status !== 'Dibatalkan'"
                                                     @click="promptCancelInvoice(inv)"
-                                                    class="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-bold text-[10px] rounded-lg transition-all"
-                                                    title="Batalkan Invoice (Void)">
+                                                    :class="(inv.status === 'Lunas' || (inv.paidAmount && inv.paidAmount > 0)) ? 'px-2 py-1 bg-slate-50 text-slate-400 border border-slate-200 font-bold text-[10px] rounded-lg transition-all' : 'px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-bold text-[10px] rounded-lg transition-all'"
+                                                    :title="(inv.status === 'Lunas' || (inv.paidAmount && inv.paidAmount > 0)) ? 'Invoice memiliki pembayaran aktif / lunas. Klik untuk petunjuk VOID.' : 'Batalkan Invoice (Void)'">
                                                     <i class="fa-solid fa-ban mr-1"></i>
                                                     <span>Batalkan</span>
                                                 </button>
@@ -3787,6 +3787,7 @@
                 payAmount: 0,
                 payHutangAmount: 0,
                 paymentHistory: [],
+                get paymentHistoryList() { return this.paymentHistory || []; },
                 showPaymentHistoryModal: false,
                 activePaymentHistoryItems: [],
                 isSubmittingPayPiutang: false,
@@ -4366,6 +4367,37 @@
                         }
 
                         // Keep a local backup/cache, but no longer treat it as the source of truth.
+                        // PAYMENT HISTORY FROM SUPABASE LIVE
+                        try {
+                            const { data: remotePayments, error: payFetchErr } = await supabaseClient
+                                .from('payment_history')
+                                .select('id, payment_no, invoice_id, inv_no, customer_name, amount, payment_method, account_id, status, created_by, created_at, voided_at, voided_by, void_reason')
+                                .order('id', { ascending: false });
+
+                            if (!payFetchErr && Array.isArray(remotePayments)) {
+                                this.paymentHistory = remotePayments.map(row => ({
+                                    id: Number(row.id),
+                                    supabaseId: Number(row.id),
+                                    paymentNo: row.payment_no,
+                                    invoiceId: Number(row.invoice_id) || null,
+                                    invNo: row.inv_no,
+                                    customerName: row.customer_name,
+                                    amount: Number(row.amount || 0),
+                                    paymentMethod: row.payment_method,
+                                    accountId: Number(row.account_id) || null,
+                                    status: row.status || 'VALID',
+                                    createdBy: row.created_by,
+                                    createdAt: row.created_at,
+                                    date: this.normalizeSupabaseDate(row.created_at) || this.getLocalDateString(),
+                                    voidedAt: row.voided_at,
+                                    voidedBy: row.voided_by,
+                                    voidReason: row.void_reason
+                                }));
+                            }
+                        } catch (payErr) {
+                            console.warn('Warning: failed to load payment_history from Supabase', payErr);
+                        }
+
                         this.saveDataToStorage();
                     } catch (error) {
                         console.error('Master data Supabase sync error:', error);
@@ -5471,7 +5503,16 @@
                         await this.loadAccountingDataFromSupabase();
                     } catch (err) {
                         console.error(err);
-                        await window.showAppAlert('Koreksi Gagal: ' + (err.message || err));
+                        let friendlyErr = err?.message || String(err);
+                        if (friendlyErr.includes('UNKNOWN_REVENUE_CATEGORY')) {
+                            const categoryName = friendlyErr.match(/Kategori produk "(.*?)"/)?.[1] || 'terkait';
+                            friendlyErr = `⚠️ Koreksi Belum Dapat Diproses\n\nProduk "${categoryName}" belum memiliki mapping akun pendapatan di sistem.\n\nData invoice belum diubah.\n\nSilakan hubungi Admin untuk melengkapi mapping kategori produk.`;
+                        } else if (friendlyErr.includes('HAS_ACTIVE_PAYMENTS') || friendlyErr.includes('memiliki pembayaran aktif')) {
+                            friendlyErr = `⚠️ Koreksi Ditolak\n\nInvoice ini memiliki pembayaran aktif. Silakan VOID pembayaran di menu Riwayat Bayar terlebih dahulu sebelum melakukan koreksi.\n\nData invoice belum diubah.`;
+                        } else {
+                            friendlyErr = `⚠️ Koreksi Gagal: ${friendlyErr}\n\nData invoice belum diubah.`;
+                        }
+                        await window.showAppAlert(friendlyErr, 'Koreksi Invoice', 'warning');
                     } finally {
                         this.isSubmittingCorrection = false;
                     }
@@ -6410,9 +6451,18 @@
                         return;
                     }
 
-                    const payments = this.paymentHistoryList.filter(p => p.invNo === inv.invNo && p.status !== 'VOID');
-                    if (payments && payments.length > 0) {
-                        this.showAppAlert(`DITOLAK: Invoice ${inv.invNo} memiliki ${payments.length} riwayat pembayaran aktif.\n\nSistem Akuntansi melarang pembatalan invoice yang sudah terbayar (sebagian/lunas) untuk mencegah kerusakan neraca kas.\n\nSolusi: Silakan batalkan (VOID) semua riwayat pembayaran terkait invoice ini terlebih dahulu melalui menu Pembayaran Piutang, baru batalkan Invoicenya.`);
+                    const historyList = Array.isArray(this.paymentHistory) ? this.paymentHistory : (Array.isArray(this.paymentHistoryList) ? this.paymentHistoryList : []);
+                    const invNoStr = inv.invNo || inv.inv_no || '';
+                    const invIdNum = inv.id || inv.supabaseId;
+                    const payments = historyList.filter(p => (p.invNo === invNoStr || (p.invoiceId && Number(p.invoiceId) === Number(invIdNum))) && p.status !== 'VOID');
+                    if ((payments && payments.length > 0) || inv.status === 'Lunas') {
+                        await window.showAppAlert(
+                            `Invoice ${invNoStr} tidak dapat dibatalkan karena ${inv.status === 'Lunas' ? 'invoice sudah LUNAS' : 'sudah memiliki ' + payments.length + ' pembayaran aktif'}.\n\n` +
+                            `Jika terdapat kesalahan input pembayaran, silakan VOID pembayaran terlebih dahulu melalui menu Riwayat Bayar.\n\n` +
+                            `Setelah pembayaran direkonsiliasi, invoice dapat diproses sesuai aturan.`,
+                            'Pembatalan Invoice Ditolak',
+                            'warning'
+                        );
                         return;
                     }
 

@@ -312,12 +312,15 @@ BEGIN
 
         v_item_subtotal_calc := (v_item_qty * v_item_price) - v_item_disc_amt;
 
-        IF (v_item->>'category') IN ('Barang', 'Produk', 'General', 'Peralatan', 'Hardware') THEN
-            v_barang_sum := v_barang_sum + v_item_subtotal_calc;
-        ELSIF (v_item->>'category') IN ('Jasa', 'Servis', 'Instalasi', 'Layanan') THEN
+        IF UPPER(COALESCE(v_item->>'category', '')) LIKE '%JASA%' 
+           OR UPPER(COALESCE(v_item->>'category', '')) LIKE '%SERVIS%' 
+           OR UPPER(COALESCE(v_item->>'category', '')) LIKE '%SERVICE%' 
+           OR UPPER(COALESCE(v_item->>'category', '')) LIKE '%INSTALASI%' 
+           OR UPPER(COALESCE(v_item->>'category', '')) LIKE '%LAYANAN%' 
+           OR LOWER(COALESCE(v_item->>'type', '')) = 'jasa' THEN
             v_jasa_sum := v_jasa_sum + v_item_subtotal_calc;
         ELSE
-            RAISE EXCEPTION 'UNKNOWN_REVENUE_CATEGORY: Kategori produk "%" pada baris ke-% tidak terdaftar', (v_item->>'category'), v_line_idx;
+            v_barang_sum := v_barang_sum + v_item_subtotal_calc;
         END IF;
 
         v_calc_items_sum := v_calc_items_sum + v_item_subtotal_calc;
