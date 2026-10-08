@@ -888,7 +888,9 @@
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-slate-100 font-medium">
-                                    <template x-for="p in (piutangList || []).filter(item => item.status !== 'Dibatalkan' && item.status !== 'Lunas' && Number(item.remaining) > 0)" :key="p.id">
+                                    <template
+                                        x-for="p in (piutangList || []).filter(item => item.status !== 'Dibatalkan' && item.status !== 'Lunas' && Number(item.remaining) > 0)"
+                                        :key="p.id">
                                         <tr class="hover:bg-slate-50/80 transition-colors">
                                             <td class="p-3">
                                                 <span class="font-bold text-slate-800" x-text="p.customerName"></span>
@@ -3612,8 +3614,8 @@
 
     <!-- ALPINE.JS APPLICATION LOGIC -->
     <script>
-        // PWA Service Worker & Stale Cache Invalidation (v4.0)
-        const CURRENT_APP_VERSION = 'v4.0';
+        // PWA Service Worker & Stale Cache Invalidation (v5.1)
+        const CURRENT_APP_VERSION = 'v5.1';
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', async () => {
                 try {
@@ -4128,7 +4130,7 @@
                     }
                 },
 
-                handleRealtimeDataChange(tableName, payload) {
+                async handleRealtimeDataChange(tableName, payload) {
                     if (this.realtimeDebounceTimer) {
                         clearTimeout(this.realtimeDebounceTimer);
                     }
@@ -7095,7 +7097,7 @@
                         this.showPayPiutangModal = false;
                         this.payAmount = '';
                         this.showAppAlert('Pembayaran sebesar ' + this.formatRupiah(payAmt) + ' berhasil diproses dan dicatat ke General Ledger!');
-                        
+
                         // SINKRONKAN GENERAL LEDGER
                         await this.loadAccountingDataFromSupabase();
                     } catch (err) {
@@ -7177,7 +7179,7 @@
                         this.showVoidPaymentModal = false;
                         this.showPaymentHistoryModal = false;
                         this.showAppAlert('Pembayaran berhasil di-VOID dan Jurnal Pembalik (Reversal) otomatis diterbitkan!');
-                        
+
                         await this.loadAccountingDataFromSupabase();
                     } catch (err) {
                         console.error('Execute void payment error:', err);
@@ -7187,7 +7189,7 @@
                     }
                 },
 
-                submitPayHutang() {
+                async submitPayHutang() {
                     // 1. Validasi Data Hutang
                     if (!this.activeHutang || !this.activeHutang.poNo) {
                         this.showAppAlert('Data hutang tidak valid.');
