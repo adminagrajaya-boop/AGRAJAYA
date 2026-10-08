@@ -3614,8 +3614,8 @@
 
     <!-- ALPINE.JS APPLICATION LOGIC -->
     <script>
-        // PWA Service Worker & Stale Cache Invalidation (v5.1)
-        const CURRENT_APP_VERSION = 'v5.1';
+        // PWA Service Worker & Stale Cache Invalidation (v5.2)
+        const CURRENT_APP_VERSION = 'v5.2';
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', async () => {
                 try {
@@ -8352,7 +8352,7 @@
         .btn-print { background: #0284c7; color: #ffffff; }
         .btn-close { background: #475569; color: #ffffff; margin-left: 8px; }
         .page-wrapper { display: flex; justify-content: center; padding: 20px; }
-        .invoice-sheet { width: 210mm; min-height: 297mm; background: #ffffff; padding: 18mm 16mm; border-radius: 8px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); display: flex; flex-direction: column; justify-content: space-between; }
+        .invoice-sheet { width: 210mm; min-height: auto; height: auto; background: #ffffff; padding: 14mm 16mm; border-radius: 8px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); box-sizing: border-box; }
         .inv-header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 14px; border-bottom: 2px solid #0f172a; }
         .brand-col { display: flex; align-items: center; gap: 12px; }
         .brand-logo { height: 56px; max-width: 140px; width: auto; object-fit: contain; border-radius: 4px; }
@@ -8384,12 +8384,35 @@
         .sign-col { text-align: center; font-size: 11px; }
         .sign-role { font-weight: 700; color: #334155; margin-bottom: 55px; }
         .sign-name { font-weight: 700; color: #0f172a; border-top: 1px solid #94a3b8; display: inline-block; min-width: 170px; padding-top: 4px; }
-        @page { size: A4 portrait; margin: 12mm 14mm; }
+        @page { size: A4 portrait; margin: 10mm 12mm; }
         @media print {
-            body { background: #fff !important; padding: 0 !important; }
+            html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; }
             .no-print-bar { display: none !important; }
-            .page-wrapper { padding: 0 !important; display: block !important; }
-            .invoice-sheet { width: 100% !important; box-shadow: none !important; border-radius: 0 !important; padding: 0 !important; }
+            .page-wrapper { padding: 0 !important; margin: 0 !important; display: block !important; }
+            .invoice-sheet {
+                width: 100% !important;
+                height: auto !important;
+                min-height: 0 !important;
+                max-height: none !important;
+                box-shadow: none !important;
+                border-radius: 0 !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                display: block !important;
+            }
+            .inv-header, .party-grid, .summary-box, .notes-box {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+            }
+            .items-table tr {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+            }
+            .sign-grid {
+                margin-top: 24px !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+            }
         }
     </style>
 </head>
