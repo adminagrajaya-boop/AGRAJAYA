@@ -3614,8 +3614,8 @@
 
     <!-- ALPINE.JS APPLICATION LOGIC -->
     <script>
-        // PWA Service Worker & Stale Cache Invalidation (v5.7)
-        const CURRENT_APP_VERSION = 'v5.7';
+        // PWA Service Worker & Stale Cache Invalidation (v5.8)
+        const CURRENT_APP_VERSION = 'v5.8';
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', async () => {
                 try {
@@ -5468,9 +5468,16 @@
                     }
 
                     const candidateInvNo = this.generateCode('INV', this.invoiceList, 'invCounter') + '-REV';
-                    const projectIdNum = (oldInv.project_id && oldInv.project_id !== 'null' && Number.isSafeInteger(Number(oldInv.project_id))) ? Number(oldInv.project_id) : null;
-                    const customerIdNum = (oldInv.customer_id && oldInv.customer_id !== 'null' && Number.isSafeInteger(Number(oldInv.customer_id))) ? Number(oldInv.customer_id) : null;
-                    const quotationIdVal = oldInv.quotationId || oldInv.quotation_id || null;
+                    
+                    const parseNullableInteger = (value) => {
+                        if (value === null || value === undefined || value === '') return null;
+                        const n = Number(value);
+                        return Number.isSafeInteger(n) && n > 0 ? n : null;
+                    };
+
+                    const projectIdNum = parseNullableInteger(oldInv.project_id);
+                    const customerIdNum = parseNullableInteger(oldInv.customer_id);
+                    const quotationIdVal = parseNullableInteger(oldInv.quotationId || oldInv.quotation_id);
 
                     const newInvData = {
                         inv_no: candidateInvNo,
@@ -5507,23 +5514,35 @@
                         await this.loadAccountingDataFromSupabase();
                     } catch (err) {
                         console.error('[INVOICE_CORRECTION] PIPELINE FAILED:', err);
-                        if (err && typeof err === 'object') {
-                            console.error('[INVOICE_CORRECTION] ERROR_DETAILS:', JSON.stringify({
-                                message: err.message,
-                                code: err.code,
-                                details: err.details,
-                                hint: err.hint
-                            }, null, 2));
-                        }
-                        let friendlyErr = err?.message || String(err);
-                        if (friendlyErr.includes('UNKNOWN_REVENUE_CATEGORY')) {
-                            friendlyErr = `Koreksi Invoice Belum Dapat Dilanjutkan\n\nPengaturan produk ini belum lengkap untuk proses koreksi.\n\nSilakan lengkapi pengaturan produk terlebih dahulu, kemudian coba kembali.\n\nData invoice tetap aman dan tidak berubah.`;
-                        } else if (friendlyErr.includes('HAS_ACTIVE_PAYMENTS') || friendlyErr.includes('memiliki histori pembayaran aktif') || friendlyErr.includes('memiliki pembayaran aktif')) {
-                            friendlyErr = `⚠️ Koreksi Ditolak\n\nInvoice ini memiliki pembayaran aktif. Silakan VOID pembayaran di menu Riwayat Bayar terlebih dahulu sebelum melakukan koreksi.\n\nData invoice belum diubah.`;
-                        } else {
-                            friendlyErr = `Koreksi Invoice Belum Dapat Dilanjutkan\n\nTerjadi kendala saat menyimpan koreksi invoice:\n\n${err?.message || String(err)}\n\nData invoice tetap aman dan tidak berubah.`;
-                        }
-                        await window.showAppAlert(friendlyErr, 'Koreksi Invoice', 'warning');
+                        
+                        const formatInvoiceCorrectionError = (e) => {
+                            const errStr = e?.message || String(e);
+                            if (errStr.includes('PAYMENT_EXISTS') || errStr.includes('HAS_ACTIVE_PAYMENTS') || errStr.includes('memiliki histori pembayaran aktif')) {
+                                return "Koreksi ditolak: invoice ini masih memiliki histori pembayaran aktif. Pembayaran harus dibereskan terlebih dahulu.";
+                            }
+                            if (errStr.includes('INVALID_PROJECT_ID')) {
+                                return "Koreksi ditolak: data proyek invoice tidak valid.";
+                            }
+                            if (errStr.includes('INVALID_CUSTOMER_ID')) {
+                                return "Koreksi ditolak: data pelanggan invoice tidak valid.";
+                            }
+                            if (errStr.includes('DUPLICATE_INV_NO')) {
+                                return "Koreksi ditolak: nomor invoice pengganti sudah digunakan.";
+                            }
+                            if (errStr.includes('AMBIGUOUS_OLD_JOURNAL')) {
+                                return "Koreksi ditolak: jurnal invoice lama tidak dapat ditentukan dengan aman.";
+                            }
+                            if (errStr.includes('MISSING_OLD_PAYMENT_COA')) {
+                                return "Koreksi ditolak: akun pembayaran invoice lama tidak dapat ditentukan.";
+                            }
+                            if (errStr.includes('UNKNOWN_REVENUE_CATEGORY')) {
+                                return "Koreksi ditolak: kategori barang/jasa tidak dapat ditentukan.";
+                            }
+                            return errStr; // Return actual postgres message safely
+                        };
+
+                        const friendlyErr = formatInvoiceCorrectionError(err);
+                        await window.showAppAlert(friendlyErr, 'Koreksi Invoice Gagal', 'warning');
                     } finally {
                         this.isSubmittingCorrection = false;
                     }
