@@ -219,7 +219,7 @@ BEGIN
                     INSERT INTO public.stock_logs (
                         product_id, product_name, action_type, qty, stock_before, stock_after, reference_code, note, created_by
                     ) VALUES (
-                        v_prod_id, v_prod.name, 'VOID_IN', v_item_qty, v_old_stock, v_new_stock, v_trx.trx_code,
+                        v_prod_id, v_prod.name, 'VOID', v_item_qty, v_old_stock, v_new_stock, v_trx.trx_code,
                         'Pengembalian stok void transaksi ' || v_trx.trx_code, v_caller_id
                     );
                 END IF;

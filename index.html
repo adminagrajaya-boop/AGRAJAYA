@@ -6629,102 +6629,64 @@
                             return;
                         }
 
-                        let warnMsg = `Yakin membatalkan (VOID) Invoice ${inv.invNo}?\n\nPerhatian:\n1. Status Invoice akan menjadi Dibatalkan.\n2. Jurnal akuntansi terkait invoice ini (Piutang & Penjualan) akan dibalikkan (reverse) secara otomatis oleh sistem.\n3. Saldo Piutang (jika ada) akan dihapus.\n4. Quotation asal (jika ada) akan kembali berstatus Approved.`;
+                        let warnMsg = `Yakin membatalkan (VOID) Invoice ${invNoStr}?\n\nPerhatian:\n1. Status Invoice akan menjadi Dibatalkan.\n2. Jurnal akuntansi terkait invoice ini (Piutang & Penjualan) akan dibalikkan (reverse) secara atomik di database.\n3. Saldo Piutang (jika ada) akan dihapus.\n4. Quotation asal (jika ada) akan kembali berstatus Approved.`;
 
                         const confirmCancel = await this.showAppConfirm(warnMsg, 'Batal / VOID Invoice', { confirmText: 'Proses VOID', variant: 'danger' });
                         if (!confirmCancel) return;
 
-                        // ATTEMPT SERVER-SIDE ATOMIC VOID FIRST (Single Transaction)
-                        let atomicExecuted = false;
-                        if (supabaseClient && this.isAuthenticated && Number.isSafeInteger(Number(invIdNum)) && Number(invIdNum) > 0) {
-                            try {
-                                const { data: atomicData, error: atomicErr } = await supabaseClient.rpc('void_invoice_atomic', {
-                                    p_invoice_id: Number(invIdNum),
-                                    p_reason: `VOID Invoice ${inv.invNo}`
-                                });
-
-                                if (!atomicErr && atomicData && atomicData.success) {
-                                    atomicExecuted = true;
-                                    if (inv.quotationId) {
-                                        const localQt = this.penawaranList.find(q => q.id === inv.quotationId);
-                                        if (localQt) localQt.status = 'Approved';
-                                    }
-                                } else if (atomicErr && atomicErr.message && !atomicErr.message.includes('function') && !atomicErr.message.includes('does not exist')) {
-                                    console.error('void_invoice_atomic business error:', atomicErr);
-                                    this.showAppAlert('Gagal membatalkan invoice: ' + (atomicErr.message || atomicErr));
-                                    return;
-                                }
-                            } catch (atomicEx) {
-                                console.warn('void_invoice_atomic fallback:', atomicEx);
-                            }
+                        if (!supabaseClient || !this.isAuthenticated) {
+                            this.showAppAlert('Koneksi Supabase atau autentikasi tidak aktif. Pembatalan invoice harus melalui RPC atomik di database.');
+                            return;
                         }
 
-                        if (!atomicExecuted && supabaseClient && this.isAuthenticated) {
-                            let journalIdToReverse = null;
-                            const { data: jrnData, error: jrnErr } = await supabaseClient
-                                .from('journal_entries')
-                                .select('id')
-                                .eq('source_type', 'INVOICE')
-                                .eq('source_code', inv.invNo)
-                                .eq('status', 'POSTED')
-                                .eq('is_reversal', false)
-                                .maybeSingle();
-
-                            if (jrnErr) console.warn('Could not fetch journal to reverse:', jrnErr);
-                            if (jrnData) journalIdToReverse = jrnData.id;
-
-                            if (journalIdToReverse) {
-                                const { data: revResult, error: rpcErr } = await supabaseClient.rpc('reverse_journal_entry_secure', {
-                                    p_original_journal_id: journalIdToReverse,
-                                    p_reversal_reason: `VOID Invoice ${inv.invNo}`
-                                });
-                                if (rpcErr) {
-                                    console.error('Reverse journal RPC error:', rpcErr);
-                                    this.showAppAlert('Gagal membalikkan jurnal akuntansi: ' + (rpcErr.message || rpcErr));
-                                    return;
-                                }
-                            }
-
-                            const { error: invErr } = await supabaseClient
+                        if (!Number.isSafeInteger(Number(invIdNum)) || Number(invIdNum) <= 0) {
+                            const { data: remoteInv, error: lookupErr } = await supabaseClient
                                 .from('invoices')
-                                .update({
-                                    status: 'Dibatalkan',
-                                    voided_at: new Date().toISOString(),
-                                    voided_by: this.currentUser.id,
-                                    remaining: 0
-                                })
-                                .eq('id', inv.id || inv.supabaseId);
-                            if (invErr) throw invErr;
-
-                            const { error: recErr } = await supabaseClient
-                                .from('receivables')
-                                .update({ status: 'Dibatalkan', remaining: 0 })
-                                .eq('inv_no', inv.invNo);
-                            if (recErr) console.warn('Warning: failed to update receivables', recErr);
-
-                            if (inv.quotationId) {
-                                const { error: qtUpdErr } = await supabaseClient
-                                    .from('quotations')
-                                    .update({ status: 'Approved' })
-                                    .eq('id', inv.quotationId);
-                                if (qtUpdErr) console.warn('Warning: failed to revert quotation status', qtUpdErr);
-
-                                const localQt = this.penawaranList.find(q => q.id === inv.quotationId);
-                                if (localQt) localQt.status = 'Approved';
+                                .select('id')
+                                .eq('inv_no', invNoStr)
+                                .maybeSingle();
+                            if (lookupErr || !remoteInv || !remoteInv.id) {
+                                this.showAppAlert('Invoice tidak ditemukan di database Supabase. VOID dibatalkan.');
+                                return;
                             }
+                            invIdNum = Number(remoteInv.id);
                         }
 
+                        // WAJIB: Panggilan RPC Atomik (Single Database Transaction)
+                        const { data: atomicData, error: atomicErr } = await supabaseClient.rpc('void_invoice_atomic', {
+                            p_invoice_id: Number(invIdNum),
+                            p_reason: `VOID Invoice ${invNoStr}`
+                        });
+
+                        if (atomicErr || !atomicData || !atomicData.success) {
+                            const errMsg = (atomicErr && atomicErr.message) ? atomicErr.message : 'Operasi VOID invoice gagal di server.';
+                            console.error('void_invoice_atomic error:', atomicErr);
+                            this.showAppAlert('Gagal membatalkan invoice: ' + errMsg);
+                            return;
+                        }
+
+                        // Respons sukses RPC menjadi SATU-SATUNYA dasar untuk menganggap VOID selesai
                         inv.status = 'Dibatalkan';
                         inv.remaining = 0;
-                        this.saveDataToStorage();
+                        if (inv.quotationId) {
+                            const localQt = this.penawaranList.find(q => q.id === inv.quotationId);
+                            if (localQt) localQt.status = 'Approved';
+                        }
 
-                        const recIndex = this.piutangList.findIndex(p => p.invNo === inv.invNo);
+                        const recIndex = this.piutangList.findIndex(p => p.invNo === invNoStr || (p.invoiceId && Number(p.invoiceId) === Number(invIdNum)));
                         if (recIndex !== -1) {
                             this.piutangList[recIndex].status = 'Dibatalkan';
                             this.piutangList[recIndex].remaining = 0;
                         }
 
-                        this.showAppAlert(`Invoice ${inv.invNo} berhasil dibatalkan (VOID). Jurnal akuntansi telah direverse secara otomatis.`);
+                        this.saveDataToStorage();
+
+                        // Refresh data dari database dan sinkronkan UI
+                        if (typeof this.loadAccountingDataFromSupabase === 'function') {
+                            await this.loadAccountingDataFromSupabase();
+                        }
+
+                        this.showAppAlert(`Invoice ${invNoStr} berhasil dibatalkan (VOID). Jurnal akuntansi dan piutang telah direverse secara atomik di database.`);
                     } catch (err) {
                         console.error('Void invoice error:', err);
                         this.showAppAlert('Gagal membatalkan invoice: ' + (err.message || err));
@@ -7676,189 +7638,53 @@
                         return;
                     }
 
-                    if (!await this.showAppConfirm(`Apakah Anda yakin ingin membatalkan (VOID) transaksi ${trx.code}? Stok barang akan dikembalikan dan jurnal akuntansi akan dibalik (reversal).`, 'Pembatalan Transaksi', { confirmText: 'Batal Transaksi', variant: 'danger' })) {
+                    if (!await this.showAppConfirm(`Apakah Anda yakin ingin membatalkan (VOID) transaksi ${trx.code}? Stok barang akan dikembalikan dan jurnal akuntansi akan dibalik (reversal) secara atomik.`, 'Pembatalan Transaksi', { confirmText: 'Batal Transaksi', variant: 'danger' })) {
                         return;
                     }
 
                     this.isVoiding = true;
                     try {
-                        // 1. CARI ORIGINAL TRANSACTION & JOURNAL UNTUK REVERSAL
-                        let trxId = Number(trx.supabaseId);
+                        if (!supabaseClient || !this.isAuthenticated) {
+                            this.showAppAlert('Koneksi Supabase atau autentikasi tidak aktif. Pembatalan transaksi POS harus melalui RPC atomik di database.');
+                            return;
+                        }
+
+                        let trxId = Number(trx.supabaseId || trx.id);
                         if (!Number.isSafeInteger(trxId) || trxId <= 0) {
-                            const { data: remoteTrx } = await supabaseClient
+                            const { data: remoteTrx, error: lookupErr } = await supabaseClient
                                 .from('transactions')
                                 .select('id')
                                 .eq('trx_code', trx.code)
                                 .maybeSingle();
-                            if (remoteTrx && remoteTrx.id) {
-                                trxId = Number(remoteTrx.id);
-                            }
-                        }
-
-                        // 1. ATTEMPT SERVER-SIDE ATOMIC VOID FIRST (Single Transaction)
-                        let atomicExecuted = false;
-                        if (supabaseClient && this.isAuthenticated && Number.isSafeInteger(trxId) && trxId > 0) {
-                            try {
-                                const { data: atomicData, error: atomicErr } = await supabaseClient.rpc('void_pos_transaction_atomic', {
-                                    p_transaction_id: trxId,
-                                    p_reason: `VOID Transaksi POS ${trx.code}`
-                                });
-
-                                if (!atomicErr && atomicData && atomicData.success) {
-                                    atomicExecuted = true;
-                                } else if (atomicErr && atomicErr.message && !atomicErr.message.includes('function') && !atomicErr.message.includes('does not exist')) {
-                                    console.error('void_pos_transaction_atomic business error:', atomicErr);
-                                    this.showAppAlert('Gagal membatalkan transaksi POS: ' + (atomicErr.message || atomicErr));
-                                    return;
-                                }
-                            } catch (atomicEx) {
-                                console.warn('void_pos_transaction_atomic fallback:', atomicEx);
-                            }
-                        }
-
-                        let origJournalId = null;
-                        if (!atomicExecuted) {
-                            if (Number.isSafeInteger(trxId) && trxId > 0) {
-                                const { data: origJournal, error: lookupErr } = await supabaseClient
-                                    .from('journal_entries')
-                                    .select('id, journal_no, status, is_reversal')
-                                    .eq('source_type', 'TRANSACTION')
-                                    .eq('source_id', trxId)
-                                    .eq('is_reversal', false)
-                                    .eq('status', 'POSTED')
-                                    .maybeSingle();
-
-                                if (lookupErr) {
-                                    console.error('Error looking up original journal:', lookupErr);
-                                    this.showAppAlert('Gagal memverifikasi status jurnal transaksi di database: ' + (lookupErr.message || lookupErr) + '. Pembatalan dibatalkan.');
-                                    return;
-                                }
-
-                                if (origJournal && origJournal.id) {
-                                    origJournalId = origJournal.id;
-                                }
-                            }
-
-                            // 2. EKSEKUSI REVERSAL JOURNAL VIA RPC DIBATALKAN JIKA RPC GAGAL
-                            if (origJournalId) {
-                                const { data: revResult, error: revErr } = await supabaseClient.rpc('reverse_journal_entry_secure', {
-                                    p_original_journal_id: origJournalId,
-                                    p_reversal_reason: `VOID Transaksi POS ${trx.code}`
-                                });
-
-                                if (revErr) {
-                                    console.error('Error reversing journal entry:', revErr);
-                                    this.showAppAlert('Gagal membuat jurnal pembalik (reversal) di database: ' + (revErr.message || revErr) + '. Pembatalan transaksi dibatalkan.');
-                                    return;
-                                }
-                            }
-
-                            // 3. UPDATE TRANSACTION STATUS DI SUPABASE LIVE
-                            if (Number.isSafeInteger(trxId) && trxId > 0) {
-                                const { error: updateTrxErr } = await supabaseClient
-                                    .from('transactions')
-                                    .update({
-                                        status: 'VOID',
-                                        voided_at: new Date().toISOString(),
-                                        voided_by: this.currentUser.id
-                                    })
-                                    .eq('id', trxId);
-
-                                if (updateTrxErr) {
-                                    console.error('Error updating transaction status to VOID in Supabase:', updateTrxErr);
-                                    this.showAppAlert('Gagal meng-update status VOID transaksi di database: ' + (updateTrxErr.message || updateTrxErr) + '. Pembatalan dibatalkan.');
-                                    return;
-                                }
-                            }
-                        }
-
-                        const validatedRestores = [];
-                        const stockChanges = [];
-
-                        if (Array.isArray(trx.items)) {
-                            for (let item of trx.items) {
-                                const pid = item.productId !== undefined ? item.productId : item.id;
-                                const prod = this.products.find(p => Number(p.id) === Number(pid));
-
-                                if (!prod) {
-                                    if (item.type === 'barang') {
-                                        this.showAppAlert(`Produk "${item.name || 'Barang'}" tidak ditemukan di database. VOID dibatalkan demi keamanan inventaris.`);
-                                        return;
-                                    }
-                                    continue;
-                                }
-
-                                if (prod.type === 'barang') {
-                                    const currentStock = Number(prod.stock);
-                                    const itemQty = Number(item.qty);
-
-                                    if (!Number.isFinite(currentStock) || currentStock < 0 || !Number.isFinite(itemQty) || itemQty <= 0) {
-                                        this.showAppAlert(`Data stok atau kuantiti untuk "${prod.name}" tidak valid. VOID dibatalkan.`);
-                                        return;
-                                    }
-
-                                    const newStock = currentStock + itemQty;
-                                    if (!Number.isFinite(newStock) || newStock < 0) {
-                                        this.showAppAlert(`Perhitungan pengembalian stok untuk "${prod.name}" tidak valid. VOID dibatalkan.`);
-                                        return;
-                                    }
-
-                                    validatedRestores.push({
-                                        prod: prod,
-                                        itemQty: itemQty,
-                                        newStock: newStock
-                                    });
-
-                                    stockChanges.push({
-                                        product: prod,
-                                        oldStock: currentStock,
-                                        oldCostPrice: Number(prod.costPrice || 0),
-                                        qty: itemQty,
-                                        newStock: newStock
-                                    });
-                                }
-                            }
-                        }
-
-                        // Persist stock restorations to Supabase before mutating local state
-                        if (stockChanges.length > 0) {
-                            const persisted = await this.persistStockChangesToSupabase(
-                                stockChanges,
-                                'VOID',
-                                trx.code,
-                                'Void Transaksi'
-                            );
-
-                            if (!persisted) {
+                            if (lookupErr || !remoteTrx || !remoteTrx.id) {
+                                this.showAppAlert('Transaksi tidak ditemukan di database Supabase. VOID dibatalkan.');
                                 return;
                             }
+                            trxId = Number(remoteTrx.id);
                         }
 
-                        // Mutation Phase (Executed only after Supabase update succeeds)
+                        // WAJIB: Panggilan RPC Atomik (Single Database Transaction)
+                        const { data: atomicData, error: atomicErr } = await supabaseClient.rpc('void_pos_transaction_atomic', {
+                            p_transaction_id: trxId,
+                            p_reason: `VOID Transaksi POS ${trx.code}`
+                        });
+
+                        if (atomicErr || !atomicData || !atomicData.success) {
+                            const errMsg = (atomicErr && atomicErr.message) ? atomicErr.message : 'Operasi VOID transaksi gagal di server.';
+                            console.error('void_pos_transaction_atomic error:', atomicErr);
+                            this.showAppAlert('Gagal membatalkan transaksi POS: ' + errMsg);
+                            return;
+                        }
+
+                        // Respons sukses RPC menjadi SATU-SATUNYA dasar untuk menganggap VOID selesai
                         trx.status = 'Void';
 
-                        if (validatedRestores.length > 0) {
-                            const dateStr = this.getLocalDateString();
-                            for (let restore of validatedRestores) {
-                                restore.prod.stock = restore.newStock;
-                                this.stockLogs.unshift({
-                                    id: Date.now() + Math.random(),
-                                    date: dateStr,
-                                    productName: restore.prod.name,
-                                    change: +restore.itemQty,
-                                    finalStock: restore.newStock,
-                                    note: `Void Transaksi ${trx.code}`
-                                });
-                            }
-                        }
-
-                        // Batalkan Invoice terkait
+                        // Batalkan Invoice & Piutang terkait di state lokal jika ada
                         const inv = this.invoiceList.find(i => i.trxCode === trx.code || i.invNo === trx.code);
                         if (inv) {
                             inv.status = 'Dibatalkan';
                             inv.remaining = 0;
 
-                            // Batalkan Piutang terkait jika ada
                             const piutang = this.piutangList.find(p => p.invNo === inv.invNo);
                             if (piutang) {
                                 piutang.status = 'Dibatalkan';
@@ -7874,14 +7700,18 @@
 
                         this.saveDataToStorage();
 
-                        // Refresh master products from Supabase to guarantee UI numbers mirror the database
-                        await this.loadMasterDataFromSupabase();
-                        await this.loadAccountingDataFromSupabase();
+                        // Refresh master products & accounting dari Supabase agar sinkron 100% dengan database
+                        if (typeof this.loadMasterDataFromSupabase === 'function') {
+                            await this.loadMasterDataFromSupabase();
+                        }
+                        if (typeof this.loadAccountingDataFromSupabase === 'function') {
+                            await this.loadAccountingDataFromSupabase();
+                        }
 
-                        this.showAppAlert(`Transaksi ${trx.code} berhasil dibatalkan (VOID). Stok barang telah dikembalikan ke database.`);
+                        this.showAppAlert(`Transaksi ${trx.code} berhasil dibatalkan (VOID). Stok barang, dokumen, dan jurnal akuntansi telah disinkronkan secara atomik.`);
                     } catch (error) {
                         console.error('Void transaction error:', error);
-                        this.showAppAlert('Terjadi kesalahan saat memproses VOID transaksi.');
+                        this.showAppAlert('Terjadi kesalahan saat memproses VOID transaksi: ' + (error.message || error));
                     } finally {
                         this.isVoiding = false;
                     }
