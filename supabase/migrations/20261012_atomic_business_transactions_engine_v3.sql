@@ -41,7 +41,9 @@ DROP FUNCTION IF EXISTS public.create_purchase_atomic(VARCHAR, VARCHAR, DATE, NU
 DROP FUNCTION IF EXISTS public.create_purchase_atomic(VARCHAR, VARCHAR, DATE, VARCHAR, BIGINT, NUMERIC, JSONB);
 DROP FUNCTION IF EXISTS public.create_expense_atomic(VARCHAR, DATE, BIGINT, BIGINT, NUMERIC, VARCHAR, BIGINT, TEXT);
 DROP FUNCTION IF EXISTS public.create_equity_transaction_atomic(VARCHAR, DATE, VARCHAR, BIGINT, BIGINT, NUMERIC, TEXT);
+-- Drop BOTH old signatures of convert_quotation_to_invoice_atomic (boolean v3 & varchar v4)
 DROP FUNCTION IF EXISTS public.convert_quotation_to_invoice_atomic(BIGINT, VARCHAR, DATE, DATE, VARCHAR, VARCHAR, BOOLEAN, BIGINT, NUMERIC, JSONB);
+DROP FUNCTION IF EXISTS public.convert_quotation_to_invoice_atomic(BIGINT, VARCHAR, DATE, DATE, VARCHAR, VARCHAR, VARCHAR, BIGINT, NUMERIC, JSONB);
 DROP FUNCTION IF EXISTS public.void_pos_transaction_atomic(BIGINT, TEXT);
 
 
@@ -803,6 +805,7 @@ DECLARE
     v_pay_acc RECORD;
     v_journal_lines JSONB := '[]'::JSONB;
     v_journal_res RECORD;
+    v_normalized_type VARCHAR;
 BEGIN
     -- [1] Authentication & Role Guard (Owner Only)
     v_caller_id := auth.uid();
@@ -824,8 +827,13 @@ BEGIN
         RAISE EXCEPTION 'DUPLICATE_EQUITY_NO: Nomor transaksi ekuitas % sudah pernah dicatat', p_equity_no;
     END IF;
 
-    IF p_transaction_type NOT IN ('MODAL', 'PRIVE') THEN
-        RAISE EXCEPTION 'INVALID_TYPE: Tipe transaksi harus MODAL atau PRIVE';
+    -- Normalize frontend type identifiers (CAPITAL_IN / DRAWING_OUT) to DB canonical values (MODAL / PRIVE)
+    IF p_transaction_type IN ('MODAL', 'CAPITAL_IN') THEN
+        v_normalized_type := 'MODAL';
+    ELSIF p_transaction_type IN ('PRIVE', 'DRAWING_OUT') THEN
+        v_normalized_type := 'PRIVE';
+    ELSE
+        RAISE EXCEPTION 'INVALID_TYPE: Tipe transaksi harus MODAL/CAPITAL_IN atau PRIVE/DRAWING_OUT';
     END IF;
 
     IF p_amount IS NULL OR p_amount <= 0 THEN
@@ -849,17 +857,17 @@ BEGIN
         RAISE EXCEPTION 'INVALID_PAYMENT_ACCOUNT: Akun kas/bank pembayaran tidak valid atau tidak memiliki COA';
     END IF;
 
-    -- [4] Insert Equity Transaction Record
+    -- [4] Insert Equity Transaction Record (using normalized type)
     INSERT INTO public.equity_transactions (
         equity_no, equity_date, transaction_type, chart_of_account_id, payment_account_id,
         amount, note, status, created_by
     ) VALUES (
-        p_equity_no, p_equity_date, p_transaction_type, p_chart_of_account_id, p_payment_account_id,
+        p_equity_no, p_equity_date, v_normalized_type, p_chart_of_account_id, p_payment_account_id,
         p_amount, COALESCE(p_note, ''), 'VALID', v_caller_id
     ) RETURNING id INTO v_eq_id;
 
-    -- [5] Post Double-Entry Journal Atomically
-    IF p_transaction_type = 'MODAL' THEN
+    -- [5] Post Double-Entry Journal Atomically (using normalized type)
+    IF v_normalized_type = 'MODAL' THEN
         -- Modal Setor: Kas Bertambah (Debit), Modal Bertambah (Credit)
         v_journal_lines := jsonb_build_array(
             jsonb_build_object(
@@ -899,7 +907,7 @@ BEGIN
         p_source_type := 'EQUITY',
         p_source_id := v_eq_id,
         p_source_code := p_equity_no,
-        p_description := 'Transaksi Ekuitas ' || p_transaction_type || ' (' || p_equity_no || ')',
+        p_description := 'Transaksi Ekuitas ' || v_normalized_type || ' (' || p_equity_no || ')',
         p_user_id := v_caller_id,
         p_lines := v_journal_lines
     );
@@ -928,7 +936,7 @@ CREATE OR REPLACE FUNCTION public.convert_quotation_to_invoice_atomic(
     p_due_date DATE DEFAULT NULL,
     p_customer_name VARCHAR DEFAULT NULL,
     p_customer_farm VARCHAR DEFAULT NULL,
-    p_is_tunai_lunas BOOLEAN DEFAULT FALSE,
+    p_payment_method VARCHAR DEFAULT 'Kredit',
     p_payment_account_id BIGINT DEFAULT NULL,
     p_paid_amount NUMERIC DEFAULT 0.00,
     p_items JSONB DEFAULT '[]'::JSONB
@@ -966,6 +974,7 @@ DECLARE
     v_paid NUMERIC(15,2);
     v_remaining NUMERIC(15,2);
     v_status VARCHAR;
+    v_stored_method VARCHAR;
     v_sales_coa_id BIGINT;
     v_service_coa_id BIGINT;
     v_piutang_coa_id BIGINT;
@@ -1061,11 +1070,28 @@ BEGIN
     END IF;
 
     -- [4] Validasi Pembayaran, DP & Sisa Piutang (Due Date Opsional)
-    IF p_is_tunai_lunas THEN
+    --     Metode pembayaran yang didukung:
+    --       'Tunai'            = Bayar penuh langsung (Lunas)
+    --       'TunaiBelumLunas'  = Cash tapi belum bayar (piutang penuh, tanpa jurnal kas, metode tersimpan tetap Tunai)
+    --       'Kredit'           = Tempo/piutang dengan DP opsional
+    IF p_payment_method IS NULL OR p_payment_method NOT IN ('Tunai', 'TunaiBelumLunas', 'Tunai Belum Lunas', 'Kredit') THEN
+        RAISE EXCEPTION 'INVALID_PAYMENT_METHOD: Metode pembayaran "%" tidak didukung untuk konversi penawaran. Gunakan Tunai, TunaiBelumLunas, atau Kredit.', p_payment_method;
+    END IF;
+
+    IF p_payment_method = 'Tunai' THEN
+        -- Tunai + Lunas: pembayaran penuh, tanpa piutang
         v_paid := v_net_total;
         v_remaining := 0.00;
         v_status := 'Lunas';
+        v_stored_method := 'Tunai';
+    ELSIF p_payment_method IN ('TunaiBelumLunas', 'Tunai Belum Lunas') THEN
+        -- Tunai + Belum Lunas: tidak ada uang diterima, seluruhnya piutang, metode tetap Tunai
+        v_paid := 0.00;
+        v_remaining := v_net_total;
+        v_status := 'Belum Bayar';
+        v_stored_method := 'Tunai';
     ELSE
+        -- Kredit / Tempo: DP sesuai input, sisa masuk piutang
         v_paid := LEAST(v_net_total, GREATEST(0.00, COALESCE(p_paid_amount, 0.00)));
         v_remaining := GREATEST(0.00, v_net_total - v_paid);
         IF v_remaining <= 0.001 THEN
@@ -1075,6 +1101,7 @@ BEGIN
         ELSE
             v_status := 'Belum Bayar';
         END IF;
+        v_stored_method := 'Kredit';
     END IF;
 
     -- [5] Resolve COAs for Invoices
@@ -1158,7 +1185,7 @@ BEGIN
         p_inv_no, v_qt.customer_id, COALESCE(p_customer_name, v_qt.customer_name, 'Pelanggan'),
         COALESCE(p_customer_farm, '-'), p_due_date, p_inv_date, v_status,
         v_gross_total, v_discount_total, v_net_total, v_paid, v_remaining, v_qt.project_id, p_quotation_id,
-        v_caller_id, (CASE WHEN p_is_tunai_lunas THEN 'Tunai' ELSE 'Kredit' END)
+        v_caller_id, v_stored_method
     ) RETURNING id INTO v_inv_id;
 
     -- [7] Insert Invoice Items Lengkap dengan item_type, product_name, cost_price (Omit generated column 'subtotal')
@@ -1226,7 +1253,8 @@ BEGIN
         'total', v_net_total,
         'paid_amount', v_paid,
         'remaining', v_remaining,
-        'status', v_status
+        'status', v_status,
+        'payment_method', v_stored_method
     );
 END;
 $$;
