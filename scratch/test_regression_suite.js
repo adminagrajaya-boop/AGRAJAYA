@@ -57,7 +57,7 @@ assert(!htmlContent.includes('const revResult = null; const revErr = null;'), 'N
 assert(!htmlContent.includes('const rpcErr = null;'), 'No mock rpcErr in index.html');
 
 // TEST 4: ALL TRANSACTIONS EXECUTE VIA SERVER-SIDE RPCS (WITH PRODUCTION COMPATIBILITY ENGINE)
-assert(htmlContent.includes("supabaseClient.rpc('post_journal_entry_secure',"), 'post_journal_entry_secure is maintained in frontend for Production schema compatibility');
+assert(!htmlContent.includes("supabaseClient.rpc('post_journal_entry_secure',"), 'post_journal_entry_secure is eliminated from frontend in favor of single-transaction RPCs');
 assert(htmlContent.includes("supabaseClient.rpc('create_pos_transaction_atomic',"), 'POS checkout calls create_pos_transaction_atomic');
 assert(htmlContent.includes("supabaseClient.rpc('convert_quotation_to_invoice_atomic',"), 'Quotation conversion calls convert_quotation_to_invoice_atomic');
 assert(htmlContent.includes("supabaseClient.rpc('create_purchase_atomic',"), 'Purchase/PO calls create_purchase_atomic');
