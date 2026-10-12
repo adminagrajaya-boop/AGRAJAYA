@@ -4322,7 +4322,7 @@
                         } else {
                             const { data: remoteInvItems, error: invItemsFetchErr } = await supabaseClient
                                 .from('invoice_items')
-                                .select('id, invoice_id, product_id, category, unit, price, cost_price, qty, subtotal, discount_type, discount_value, discount_amount')
+                                .select('*')
                                 .order('id', { ascending: true });
 
                             if (invItemsFetchErr) throw invItemsFetchErr;
@@ -4340,13 +4340,16 @@
                                     const discVal = Number(item.discount_value || 0);
                                     const discAmt = Number(item.discount_amount || 0);
                                     const net = Math.max(0, gross - discAmt);
+                                    const itemType = item.item_type || item.type || (prod ? prod.type : 'barang');
+                                    const itemName = prod ? prod.name : (item.product_name || 'Item Invoice');
 
                                     itemsByInvId[invId].push({
                                         id: Number(item.id),
                                         productId: Number(item.product_id),
-                                        name: prod ? prod.name : 'Item Invoice',
-                                        category: item.category || 'General',
-                                        unit: item.unit || 'Unit',
+                                        name: itemName,
+                                        type: itemType,
+                                        category: item.category || (prod ? prod.category : 'General'),
+                                        unit: item.unit || (prod ? prod.unit : 'Unit'),
                                         price: p,
                                         costPrice: Number(item.cost_price || 0),
                                         qty: q,

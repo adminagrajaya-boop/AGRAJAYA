@@ -67,45 +67,57 @@ assert(htmlContent.includes("supabaseClient.rpc('void_invoice_atomic',") && html
 assert(htmlContent.includes("supabaseClient.rpc('process_payable_payment_atomic',"), 'process_payable_payment_atomic is called in index.html');
 
 // Check that new atomic migration exists and defines all 5 atomic engines
-// Check that revised atomic migration v2 exists and defines all atomic engines
-const v2MigrationPath = path.join(migrationDir, '20261012_atomic_business_transactions_engine_v2.sql');
-assert(fs.existsSync(v2MigrationPath), 'Atomic business transactions engine migration v2 file exists');
-const v2Sql = fs.readFileSync(v2MigrationPath, 'utf8');
+// Check that revised atomic migration v3 exists and defines all atomic engines
+const v3MigrationPath = path.join(migrationDir, '20261012_atomic_business_transactions_engine_v3.sql');
+assert(fs.existsSync(v3MigrationPath), 'Atomic business transactions engine migration v3 file exists');
+const v3Sql = fs.readFileSync(v3MigrationPath, 'utf8');
 
-assert(v2Sql.includes('CREATE OR REPLACE FUNCTION public.create_pos_transaction_atomic'), 'Migration v2 defines create_pos_transaction_atomic');
-assert(v2Sql.includes('CREATE OR REPLACE FUNCTION public.create_purchase_atomic'), 'Migration v2 defines create_purchase_atomic');
-assert(v2Sql.includes('CREATE OR REPLACE FUNCTION public.create_expense_atomic'), 'Migration v2 defines create_expense_atomic');
-assert(v2Sql.includes('CREATE OR REPLACE FUNCTION public.create_equity_transaction_atomic'), 'Migration v2 defines create_equity_transaction_atomic');
-assert(v2Sql.includes('CREATE OR REPLACE FUNCTION public.convert_quotation_to_invoice_atomic'), 'Migration v2 defines convert_quotation_to_invoice_atomic');
-assert(v2Sql.includes('CREATE OR REPLACE FUNCTION public.void_pos_transaction_atomic'), 'Migration v2 defines enhanced void_pos_transaction_atomic');
+// Verify anti-overload drops
+assert(v3Sql.includes('DROP FUNCTION IF EXISTS public.create_purchase_atomic'), 'Migration v3 drops previous create_purchase_atomic signatures');
+assert(v3Sql.includes('DROP FUNCTION IF EXISTS public.create_pos_transaction_atomic'), 'Migration v3 drops previous create_pos_transaction_atomic signatures');
+
+assert(v3Sql.includes('CREATE OR REPLACE FUNCTION public.create_pos_transaction_atomic'), 'Migration v3 defines create_pos_transaction_atomic');
+assert(v3Sql.includes('CREATE OR REPLACE FUNCTION public.create_purchase_atomic'), 'Migration v3 defines create_purchase_atomic');
+assert(v3Sql.includes('CREATE OR REPLACE FUNCTION public.create_expense_atomic'), 'Migration v3 defines create_expense_atomic');
+assert(v3Sql.includes('CREATE OR REPLACE FUNCTION public.create_equity_transaction_atomic'), 'Migration v3 defines create_equity_transaction_atomic');
+assert(v3Sql.includes('CREATE OR REPLACE FUNCTION public.convert_quotation_to_invoice_atomic'), 'Migration v3 defines convert_quotation_to_invoice_atomic');
+assert(v3Sql.includes('CREATE OR REPLACE FUNCTION public.void_pos_transaction_atomic'), 'Migration v3 defines enhanced void_pos_transaction_atomic');
 
 // Verify strict POS persistence: transactions, invoices, invoice_items, receivables, stock_logs, journal
-assert(v2Sql.includes('INSERT INTO public.transactions'), 'Migration v2 creates transactions record in POS');
-assert(v2Sql.includes('INSERT INTO public.invoices'), 'Migration v2 creates invoices record in POS');
-assert(v2Sql.includes('INSERT INTO public.invoice_items'), 'Migration v2 creates invoice_items record in POS');
-assert(v2Sql.includes('INSERT INTO public.receivables'), 'Migration v2 creates receivables record in POS if credit has remaining balance');
-assert(v2Sql.includes('INSERT INTO public.stock_logs'), 'Migration v2 logs stock changes with action_type SALE');
-assert(v2Sql.includes("'transaction_id', v_trx_id"), 'Migration v2 returns transaction_id');
-assert(v2Sql.includes("'invoice_id', v_inv_id"), 'Migration v2 returns invoice_id');
-assert(v2Sql.includes("'receivable_id', v_rec_id"), 'Migration v2 returns receivable_id');
+assert(v3Sql.includes('INSERT INTO public.transactions'), 'Migration v3 creates transactions record in POS');
+assert(v3Sql.includes('INSERT INTO public.invoices'), 'Migration v3 creates invoices record in POS');
+assert(v3Sql.includes('INSERT INTO public.invoice_items'), 'Migration v3 creates invoice_items record in POS');
+assert(v3Sql.includes('INSERT INTO public.receivables'), 'Migration v3 creates receivables record in POS if credit has remaining balance');
+assert(v3Sql.includes('INSERT INTO public.stock_logs'), 'Migration v3 logs stock changes with action_type SALE');
+assert(v3Sql.includes("'transaction_id', v_trx_id"), 'Migration v3 returns transaction_id');
+assert(v3Sql.includes("'invoice_id', v_inv_id"), 'Migration v3 returns invoice_id');
+assert(v3Sql.includes("'receivable_id', v_rec_id"), 'Migration v3 returns receivable_id');
+
+// Verify invoice_items schema enhancements and type persistence
+assert(v3Sql.includes('ADD COLUMN IF NOT EXISTS item_type VARCHAR(20) DEFAULT'), 'Migration v3 adds item_type to invoice_items');
+assert(v3Sql.includes('ADD COLUMN IF NOT EXISTS product_name VARCHAR(255) NULL'), 'Migration v3 adds product_name to invoice_items');
+assert(v3Sql.includes('v_item_type') && v3Sql.includes('v_item_name'), 'POS and Quotation conversion persist item_type and product_name');
+
+// Verify VOID POS Payment Guard
+assert(v3Sql.includes('CANNOT_VOID_PAID_TRANSACTION: Transaksi % memiliki % pembayaran piutang aktif'), 'void_pos_transaction_atomic strictly blocks voiding transactions with valid payments');
 
 // Verify Server-side Nominal Re-calculation & Validation
-assert(v2Sql.includes('TOTAL_MISMATCH: Total transaksi dari client'), 'POS validates client total against server calculation');
-assert(v2Sql.includes('TOTAL_MISMATCH: Total pembelian dari client'), 'Purchase validates client total against server calculation');
-assert(v2Sql.includes('TOTAL_MISMATCH: Nilai penawaran asli'), 'Quotation conversion validates quotation total against server calculation');
-assert(v2Sql.includes('INSUFFICIENT_STOCK: Stok produk'), 'POS rejects checkout if stock insufficient');
+assert(v3Sql.includes('TOTAL_MISMATCH: Total transaksi dari client'), 'POS validates client total against server calculation');
+assert(v3Sql.includes('TOTAL_MISMATCH: Total pembelian dari client'), 'Purchase validates client total against server calculation');
+assert(v3Sql.includes('TOTAL_MISMATCH: Nilai penawaran asli'), 'Quotation conversion validates quotation total against server calculation');
+assert(v3Sql.includes('INSUFFICIENT_STOCK: Stok produk'), 'POS rejects checkout if stock insufficient');
 
 // Verify contract returns for PO and Quotation
-assert(v2Sql.includes("'payable_id', v_payable_id"), 'create_purchase_atomic returns payable_id');
-assert(v2Sql.includes("'receivable_id', v_rec_id") && v2Sql.includes("'invoice_id', v_inv_id"), 'convert_quotation_to_invoice_atomic returns invoice_id and receivable_id');
+assert(v3Sql.includes("'payable_id', v_payable_id"), 'create_purchase_atomic returns payable_id');
+assert(v3Sql.includes("'receivable_id', v_rec_id") && v3Sql.includes("'invoice_id', v_inv_id"), 'convert_quotation_to_invoice_atomic returns invoice_id and receivable_id');
 
 // Verify Security Grants
-assert(v2Sql.includes('REVOKE EXECUTE ON FUNCTION public.create_pos_transaction_atomic FROM PUBLIC, anon;'), 'create_pos_transaction_atomic revoked from anon');
-assert(v2Sql.includes('REVOKE EXECUTE ON FUNCTION public.create_purchase_atomic FROM PUBLIC, anon;'), 'create_purchase_atomic revoked from anon');
-assert(v2Sql.includes('REVOKE EXECUTE ON FUNCTION public.create_expense_atomic FROM PUBLIC, anon;'), 'create_expense_atomic revoked from anon');
-assert(v2Sql.includes('REVOKE EXECUTE ON FUNCTION public.create_equity_transaction_atomic FROM PUBLIC, anon;'), 'create_equity_transaction_atomic revoked from anon');
-assert(v2Sql.includes('REVOKE EXECUTE ON FUNCTION public.convert_quotation_to_invoice_atomic FROM PUBLIC, anon;'), 'convert_quotation_to_invoice_atomic revoked from anon');
-assert(v2Sql.includes('REVOKE EXECUTE ON FUNCTION public.void_pos_transaction_atomic FROM PUBLIC, anon;'), 'void_pos_transaction_atomic revoked from anon');
+assert(v3Sql.includes('REVOKE EXECUTE ON FUNCTION public.create_pos_transaction_atomic FROM PUBLIC, anon;'), 'create_pos_transaction_atomic revoked from anon');
+assert(v3Sql.includes('REVOKE EXECUTE ON FUNCTION public.create_purchase_atomic FROM PUBLIC, anon;'), 'create_purchase_atomic revoked from anon');
+assert(v3Sql.includes('REVOKE EXECUTE ON FUNCTION public.create_expense_atomic FROM PUBLIC, anon;'), 'create_expense_atomic revoked from anon');
+assert(v3Sql.includes('REVOKE EXECUTE ON FUNCTION public.create_equity_transaction_atomic FROM PUBLIC, anon;'), 'create_equity_transaction_atomic revoked from anon');
+assert(v3Sql.includes('REVOKE EXECUTE ON FUNCTION public.convert_quotation_to_invoice_atomic FROM PUBLIC, anon;'), 'convert_quotation_to_invoice_atomic revoked from anon');
+assert(v3Sql.includes('REVOKE EXECUTE ON FUNCTION public.void_pos_transaction_atomic FROM PUBLIC, anon;'), 'void_pos_transaction_atomic revoked from anon');
 
 // TEST 4B: FRONTEND STRICT PERSISTENCE - NO FAKE DATE.NOW() DATABASE IDS
 assert(!htmlContent.includes('const insertedTrxId = atomicTrx.transaction_id || Date.now()'), 'Frontend does not fallback insertedTrxId to Date.now()');
@@ -113,6 +125,7 @@ assert(!htmlContent.includes('id: atomicTrx.invoice_id || Date.now()'), 'Fronten
 assert(!htmlContent.includes('id: Date.now(),\n                            invNo: atomicTrx.inv_no'), 'Frontend does not use Date.now() for receivable id');
 assert(!htmlContent.includes('id: insertedPurchaseId || Date.now()'), 'Frontend does not fallback purchase id to Date.now()');
 assert(!htmlContent.includes('id: insertedInvId || Date.now()'), 'Frontend does not fallback quotation conversion invoice_id to Date.now()');
+assert(htmlContent.includes('const itemType = item.item_type || item.type'), 'Frontend maps item_type from invoice_items');
 
 // TEST 5: STATE CLEANING ON 0 QUERY RESULTS (NO STALE DATA RETENTION)
 const normalizedHtml = htmlContent.replace(/\r\n/g, '\n');

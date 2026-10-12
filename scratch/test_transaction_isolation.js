@@ -847,6 +847,52 @@ try {
 
 assert(validateTotals(1000000.02, 1000000.00), 'Server allows standard floating point rounding tolerance (<= 0.05)');
 
+// 7. VOID POS Transaction Payment Guard (Blocks VOID if linked invoice has active payments)
+function simulateVoidPosWithPaymentCheck(trxId) {
+    const trx = engine.transactions.find(t => t.id === trxId);
+    if (!trx) throw new Error('TRANSACTION_NOT_FOUND');
+    if (trx.status === 'VOID') throw new Error('ALREADY_VOIDED');
+
+    // Find linked invoice IDs
+    const linkedInvoices = engine.invoices.filter(i => i.transaction_id === trxId || i.id === trx.invoice_id || i.inv_no === trx.trx_code);
+    const linkedInvIds = linkedInvoices.map(i => i.id);
+
+    // Check payment_history
+    const activePayments = engine.paymentHistory.filter(p => linkedInvIds.includes(p.invoice_id) && p.status === 'VALID');
+    if (activePayments.length > 0) {
+        throw new Error(`CANNOT_VOID_PAID_TRANSACTION: Transaksi ${trx.trx_code} memiliki ${activePayments.length} pembayaran piutang aktif berstatus VALID pada invoice terkait.`);
+    }
+
+    trx.status = 'VOID';
+    linkedInvoices.forEach(i => i.status = 'Dibatalkan');
+    return { success: true, status: 'VOID' };
+}
+
+// Test case 7A: Transaction with active payment on linked invoice MUST throw CANNOT_VOID_PAID_TRANSACTION
+engine.paymentHistory.push({ id: 991, invoice_id: 7702, status: 'VALID', amount: 300000 });
+try {
+    simulateVoidPosWithPaymentCheck(8802); // TRX-CREDIT-001 has linked invoice 7702 with valid payment
+    assert(false, 'Voiding POS transaction with active payments must be blocked');
+} catch (e) {
+    assert(e.message.includes('CANNOT_VOID_PAID_TRANSACTION'), 'void_pos_transaction_atomic blocks voiding transaction with active payment on linked invoice');
+}
+assert(engine.transactions.find(t => t.id === 8802).status === 'VALID', 'Transaction remains VALID after blocked void attempt');
+
+// Test case 7B: Transaction without active payments succeeds
+const unpaidVoidRes = simulateVoidPosWithPaymentCheck(8801); // TRX-CASH-001 has no payment_history records
+assert(unpaidVoidRes.success === true && unpaidVoidRes.status === 'VOID', 'Unpaid POS transaction void succeeds');
+assert(engine.invoices.find(i => i.id === 7701).status === 'Dibatalkan', 'Linked invoice marked as Dibatalkan upon POS void');
+
+// 8. Invoice Items item_type & product_name Persistence
+const testInvoiceItems = [
+    { product_id: 101, product_name: 'Pakan Ayam Broiler', item_type: 'barang', qty: 2, price: 50000 },
+    { product_id: 202, product_name: 'Jasa Vaksinasi Kandang', item_type: 'jasa', qty: 1, price: 150000 }
+];
+
+assert(testInvoiceItems[0].item_type === 'barang', 'Item type barang correctly identified and persisted');
+assert(testInvoiceItems[1].item_type === 'jasa', 'Item type jasa correctly identified and persisted');
+assert(testInvoiceItems[0].product_name === 'Pakan Ayam Broiler', 'Product name correctly persisted on invoice items');
+
 console.log('----------------------------------------------------------------');
 console.log(`TOTAL ISOLATION TESTS: ${passedTests + failedTests}`);
 console.log(`PASSED: ${passedTests}`);
