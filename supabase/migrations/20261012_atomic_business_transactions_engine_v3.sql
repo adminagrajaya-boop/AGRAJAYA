@@ -26,14 +26,25 @@
 ALTER TABLE public.invoice_items 
     ADD COLUMN IF NOT EXISTS item_type VARCHAR(20) DEFAULT 'barang',
     ADD COLUMN IF NOT EXISTS product_name VARCHAR(255) NULL,
-    ADD COLUMN IF NOT EXISTS cost_price NUMERIC(15,2) DEFAULT 0.00;
+    ADD COLUMN IF NOT EXISTS cost_price NUMERIC(15,2) DEFAULT 0.00,
+    ADD COLUMN IF NOT EXISTS discount_type VARCHAR(10) DEFAULT 'none',
+    ADD COLUMN IF NOT EXISTS discount_value NUMERIC(15,2) DEFAULT 0.00,
+    ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(15,2) DEFAULT 0.00;
 
 ALTER TABLE public.invoices 
     ADD COLUMN IF NOT EXISTS transaction_id BIGINT NULL REFERENCES public.transactions(id),
+    ADD COLUMN IF NOT EXISTS quotation_id BIGINT NULL REFERENCES public.quotations(id),
+    ADD COLUMN IF NOT EXISTS discount_total NUMERIC(15,2) DEFAULT 0.00,
     ADD COLUMN IF NOT EXISTS payment_method VARCHAR(20) NULL;
 
 ALTER TABLE public.transactions 
     ADD COLUMN IF NOT EXISTS invoice_id BIGINT NULL REFERENCES public.invoices(id);
+
+ALTER TABLE public.purchases
+    ADD COLUMN IF NOT EXISTS supplier_id BIGINT NULL,
+    ADD COLUMN IF NOT EXISTS paid_amount NUMERIC(15,2) DEFAULT 0.00,
+    ADD COLUMN IF NOT EXISTS remaining NUMERIC(15,2) DEFAULT 0.00,
+    ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'Completed';
 
 -- Clean up any potentially conflicting or overloaded signatures from previous attempts
 DROP FUNCTION IF EXISTS public.create_pos_transaction_atomic(VARCHAR, VARCHAR, DATE, NUMERIC, NUMERIC, VARCHAR, BIGINT, JSONB, NUMERIC, DATE, VARCHAR, VARCHAR, VARCHAR);
@@ -108,6 +119,7 @@ DECLARE
     v_paid NUMERIC(15,2);
     v_remaining NUMERIC(15,2);
     v_status VARCHAR;
+    v_stored_method VARCHAR;
     v_pay_acc RECORD;
     v_pay_coa_id BIGINT;
     v_revenue_coa_id BIGINT;
@@ -233,10 +245,26 @@ BEGIN
     END IF;
 
     -- [4] Validasi Aturan Pembayaran, DP, Sisa Piutang & Status
-    IF p_payment_method IN ('Tunai', 'Transfer', 'QRIS') THEN
+    --     Metode yang didukung:
+    --     - 'Tunai' / 'Tunai Lunas' / 'TunaiLunas' : Lunas langsung via kas (paid = total, remaining = 0)
+    --     - 'TunaiBelumLunas' / 'Tunai Belum Lunas' : Penjualan tunai belum lunas (paid = 0, remaining = total, tanpa kas, masuk piutang)
+    --     - 'Transfer' / 'QRIS'                   : Lunas langsung via bank / gateway
+    --     - 'Kredit'                              : Tempo / cicilan dengan DP opsional
+    IF p_payment_method IN ('Tunai', 'Tunai Lunas', 'TunaiLunas') THEN
         v_paid := v_calc_net_total;
         v_remaining := 0.00;
         v_status := 'Lunas';
+        v_stored_method := 'Tunai';
+    ELSIF p_payment_method IN ('TunaiBelumLunas', 'Tunai Belum Lunas') THEN
+        v_paid := 0.00;
+        v_remaining := v_calc_net_total;
+        v_status := 'Belum Bayar';
+        v_stored_method := 'Tunai';
+    ELSIF p_payment_method IN ('Transfer', 'QRIS') THEN
+        v_paid := v_calc_net_total;
+        v_remaining := 0.00;
+        v_status := 'Lunas';
+        v_stored_method := p_payment_method;
     ELSIF p_payment_method = 'Kredit' THEN
         v_dp := LEAST(v_calc_net_total, GREATEST(0.00, COALESCE(p_dp_amount, 0.00)));
         v_paid := v_dp;
@@ -248,6 +276,7 @@ BEGIN
         ELSE
             v_status := 'Belum Bayar';
         END IF;
+        v_stored_method := 'Kredit';
     ELSE
         RAISE EXCEPTION 'INVALID_PAYMENT_METHOD: Metode pembayaran "%" tidak didukung', p_payment_method;
     END IF;
@@ -323,7 +352,7 @@ BEGIN
         payment_method, payment_account_id, items, created_by
     ) VALUES (
         p_trx_code, 'Jual', v_cust_name, p_transaction_date, 'VALID',
-        v_calc_net_total, v_calc_profit, p_payment_method, p_payment_account_id, p_items, v_caller_id
+        v_calc_net_total, v_calc_profit, v_stored_method, p_payment_account_id, p_items, v_caller_id
     ) RETURNING id INTO v_trx_id;
 
     -- [7] Insert Record Invoices Terhubung (transaction_id = v_trx_id)
@@ -339,7 +368,7 @@ BEGIN
     ) VALUES (
         v_inv_no, NULL, v_cust_name, v_cust_farm, p_due_date, p_transaction_date, v_status,
         v_gross_total, v_discount_total, v_calc_net_total, v_paid, v_remaining, NULL, NULL,
-        v_trx_id, v_caller_id, p_payment_method
+        v_trx_id, v_caller_id, v_stored_method
     ) RETURNING id INTO v_inv_id;
 
     -- Tautkan transaksi dengan invoice_id
