@@ -6581,6 +6581,11 @@
 
                 async promptCancelInvoice(inv) {
                     if (!inv) return;
+                    const userRole = (this.currentUser?.role || '').toLowerCase().trim();
+                    if (userRole !== 'owner' && userRole !== 'admin') {
+                        this.showAppAlert('Hanya Owner dan Admin yang berhak membatalkan (VOID) Invoice.');
+                        return;
+                    }
                     if (inv.status === 'Void' || inv.status === 'Dibatalkan') {
                         this.showAppAlert(`Invoice ${inv.invNo || ''} sudah berstatus Dibatalkan / Void.`);
                         return;
@@ -6790,6 +6795,13 @@
                     // VALIDASI AUTH SESSION UNTUK PERSISTENCE OPERASIONAL
                     if (!supabaseClient || !this.isAuthenticated || !this.currentUser || !this.currentUser.id) {
                         this.showAppAlert('Sesi pengguna tidak siap atau belum terautentikasi. Pembelian dibatalkan.');
+                        return;
+                    }
+
+                    // ROLE VALIDATION: HANYA OWNER ATAU ADMIN YANG BERHAK MENCATAT PEMBELIAN
+                    const userRole = (this.currentUser.role || '').toLowerCase().trim();
+                    if (userRole !== 'owner' && userRole !== 'admin') {
+                        this.showAppAlert('Hanya Owner dan Admin yang berhak mencatat Pembelian Supplier.');
                         return;
                     }
 
@@ -7577,6 +7589,12 @@
                 async promptVoidTransaction(trx) {
                     if (!supabaseClient || !this.isAuthenticated || !this.currentUser) {
                         this.showAppAlert('Sesi pengguna tidak siap atau belum login. Pembatalan transaksi dibatalkan.');
+                        return;
+                    }
+
+                    const userRole = (this.currentUser?.role || '').toLowerCase().trim();
+                    if (userRole !== 'owner' && userRole !== 'admin') {
+                        this.showAppAlert('Hanya Owner dan Admin yang berhak membatalkan (VOID) Transaksi.');
                         return;
                     }
 
