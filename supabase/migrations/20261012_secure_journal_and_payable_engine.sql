@@ -42,9 +42,9 @@ BEGIN
         RAISE EXCEPTION 'UNAUTHORIZED: Peran pengguna tidak memiliki hak akses untuk memposting jurnal';
     END IF;
 
-    -- Strict check for sensitive source types
-    IF p_source_type IN ('EXPENSE', 'EQUITY') AND v_caller_role NOT IN ('owner', 'admin') THEN
-        RAISE EXCEPTION 'UNAUTHORIZED: Hanya Owner atau Admin yang berhak memposting jurnal Beban atau Ekuitas';
+    -- Strict check for sensitive source types (PURCHASE, EXPENSE, EQUITY)
+    IF p_source_type IN ('PURCHASE', 'EXPENSE', 'EQUITY') AND v_caller_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION 'UNAUTHORIZED: Hanya Owner atau Admin yang berhak memposting jurnal Pembelian (PURCHASE), Beban (EXPENSE), atau Ekuitas (EQUITY)';
     END IF;
 
     -- [2] Validate Source Type & Existence of Source Record (Anti-Ghost Journal)
@@ -259,8 +259,8 @@ BEGIN
         RAISE EXCEPTION 'PURCHASE_NOT_FOUND: Pembelian ID % tidak ditemukan', p_purchase_id;
     END IF;
 
-    IF v_purch.status IN ('Dibatalkan', 'Void') THEN
-        RAISE EXCEPTION 'INVALID_PURCHASE_STATUS: Pembayaran hutang tidak dapat diproses karena pembelian % berstatus Dibatalkan/Void', v_purch.po_no;
+    IF v_purch.voided_at IS NOT NULL THEN
+        RAISE EXCEPTION 'INVALID_PURCHASE_STATUS: Pembayaran hutang tidak dapat diproses karena pembelian % telah dibatalkan/void', v_purch.po_no;
     END IF;
 
     -- [4] Calculate Existing Valid Payments With Row Locking
@@ -313,9 +313,9 @@ BEGIN
         WHERE purchase_id = v_purch.id OR po_no = v_purch.po_no;
     ELSE
         INSERT INTO public.payables (
-            purchase_id, po_no, supplier_name, due_date, status, total, paid, remaining
+            purchase_id, po_no, supplier_name, status, total, paid, remaining
         ) VALUES (
-            v_purch.id, v_purch.po_no, v_purch.supplier_name, NULL, v_new_status, v_purch.total, v_new_paid, v_new_remaining
+            v_purch.id, v_purch.po_no, v_purch.supplier_name, v_new_status, v_purch.total, v_new_paid, v_new_remaining
         );
     END IF;
 
