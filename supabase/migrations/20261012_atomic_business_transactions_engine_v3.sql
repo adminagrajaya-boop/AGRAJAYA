@@ -37,6 +37,7 @@ ALTER TABLE public.transactions
 
 -- Clean up any potentially conflicting or overloaded signatures from previous attempts
 DROP FUNCTION IF EXISTS public.create_pos_transaction_atomic(VARCHAR, VARCHAR, DATE, NUMERIC, NUMERIC, VARCHAR, BIGINT, JSONB, NUMERIC, DATE, VARCHAR, VARCHAR, VARCHAR);
+DROP FUNCTION IF EXISTS public.create_pos_transaction_atomic(VARCHAR, VARCHAR, DATE, NUMERIC, NUMERIC, VARCHAR, BIGINT, JSONB, NUMERIC, DATE, VARCHAR, VARCHAR, VARCHAR, NUMERIC);
 DROP FUNCTION IF EXISTS public.create_purchase_atomic(VARCHAR, VARCHAR, DATE, NUMERIC, VARCHAR, BIGINT, JSONB);
 DROP FUNCTION IF EXISTS public.create_purchase_atomic(VARCHAR, VARCHAR, DATE, VARCHAR, BIGINT, NUMERIC, JSONB);
 DROP FUNCTION IF EXISTS public.create_expense_atomic(VARCHAR, DATE, BIGINT, BIGINT, NUMERIC, VARCHAR, BIGINT, TEXT);
@@ -63,7 +64,8 @@ CREATE OR REPLACE FUNCTION public.create_pos_transaction_atomic(
     p_due_date DATE DEFAULT NULL,
     p_customer_name VARCHAR DEFAULT NULL,
     p_customer_farm VARCHAR DEFAULT NULL,
-    p_inv_no VARCHAR DEFAULT NULL
+    p_inv_no VARCHAR DEFAULT NULL,
+    p_discount NUMERIC DEFAULT 0.00
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -94,6 +96,8 @@ DECLARE
     v_disc_amt NUMERIC(15,2);
     v_item_subtotal NUMERIC(15,2);
     v_gross_total NUMERIC(15,2) := 0.00;
+    v_items_disc_total NUMERIC(15,2) := 0.00;
+    v_trx_discount NUMERIC(15,2) := 0.00;
     v_discount_total NUMERIC(15,2) := 0.00;
     v_calc_net_total NUMERIC(15,2) := 0.00;
     v_total_cost NUMERIC(15,2) := 0.00;
@@ -170,8 +174,10 @@ BEGIN
         v_disc_val := COALESCE((v_item->>'discountValue')::NUMERIC, (v_item->>'discount_value')::NUMERIC, 0.00);
         v_disc_amt := COALESCE((v_item->>'discountAmount')::NUMERIC, (v_item->>'discount_amount')::NUMERIC, 0.00);
 
-        IF v_disc_type = 'percentage' AND v_disc_val > 0 THEN
+        IF v_disc_type IN ('percent', 'percentage') AND v_disc_val > 0 THEN
             v_disc_amt := ROUND((v_qty * v_price * v_disc_val / 100.0), 2);
+        ELSIF v_disc_type IN ('nominal', 'fixed', 'rp') AND v_disc_val > 0 AND v_disc_amt = 0 THEN
+            v_disc_amt := v_disc_val;
         END IF;
 
         IF v_disc_amt < 0 OR v_disc_amt > (v_qty * v_price) THEN
@@ -182,8 +188,7 @@ BEGIN
         v_cost_price := COALESCE(v_prod.cost_price, (v_item->>'costPrice')::NUMERIC, (v_item->>'cost_price')::NUMERIC, 0.00);
 
         v_gross_total := v_gross_total + (v_qty * v_price);
-        v_discount_total := v_discount_total + v_disc_amt;
-        v_calc_net_total := v_calc_net_total + v_item_subtotal;
+        v_items_disc_total := v_items_disc_total + v_disc_amt;
         v_total_cost := v_total_cost + (v_qty * v_cost_price);
 
         -- Periksa & Deduksi Stok Hanya Jika Produk Bertipe 'barang'
@@ -211,6 +216,10 @@ BEGIN
         END IF;
     END LOOP;
 
+    -- Hitung Diskon Transaksi & Net Total
+    v_trx_discount := GREATEST(0.00, COALESCE(p_discount, 0.00));
+    v_discount_total := v_items_disc_total + v_trx_discount;
+    v_calc_net_total := GREATEST(0.00, v_gross_total - v_discount_total);
     v_calc_profit := v_calc_net_total - v_total_cost;
 
     -- Validasi Total Client vs Total Hitungan Server (Toleransi 0.05 untuk rounding)
@@ -393,6 +402,8 @@ BEGIN
         'receivable_id', v_rec_id,
         'journal_id', v_journal_res.journal_id,
         'journal_no', v_journal_res.journal_no,
+        'subtotal', v_gross_total,
+        'discount_total', v_discount_total,
         'total', v_calc_net_total,
         'paid_amount', v_paid,
         'remaining', v_remaining,
@@ -528,12 +539,15 @@ BEGIN
         RAISE EXCEPTION 'INVALID_TOTAL: Total pembelian harus lebih besar dari 0';
     END IF;
 
-    -- [4] Resolve COA untuk Jurnal Pembelian
+    -- [4] Resolve COA untuk Jurnal Pembelian (1-1210 Persediaan Barang Dagang di Production, fallback 1-1140)
     SELECT id INTO v_inv_coa_id
     FROM public.chart_of_accounts
-    WHERE code = '1-1140' AND is_active = TRUE;
+    WHERE code IN ('1-1210', '1-1140') AND is_active = TRUE
+    ORDER BY (CASE WHEN code = '1-1210' THEN 1 ELSE 2 END)
+    LIMIT 1;
+
     IF v_inv_coa_id IS NULL THEN
-        RAISE EXCEPTION 'COA_NOT_FOUND: Bagan akun Persediaan Barang (1-1140) tidak ditemukan';
+        RAISE EXCEPTION 'COA_NOT_FOUND: Bagan akun Persediaan Barang (1-1210 / 1-1140) tidak ditemukan';
     END IF;
 
     IF p_payment_method IN ('Tunai', 'Transfer') THEN
@@ -1038,8 +1052,10 @@ BEGIN
         v_disc_val := COALESCE((v_item->>'discountValue')::NUMERIC, (v_item->>'discount_value')::NUMERIC, 0.00);
         v_disc_amt := COALESCE((v_item->>'discountAmount')::NUMERIC, (v_item->>'discount_amount')::NUMERIC, 0.00);
 
-        IF v_disc_type = 'percentage' AND v_disc_val > 0 THEN
+        IF v_disc_type IN ('percent', 'percentage') AND v_disc_val > 0 THEN
             v_disc_amt := ROUND((v_qty * v_price * v_disc_val / 100.0), 2);
+        ELSIF v_disc_type IN ('nominal', 'fixed', 'rp') AND v_disc_val > 0 AND v_disc_amt = 0 THEN
+            v_disc_amt := v_disc_val;
         END IF;
 
         IF v_disc_amt < 0 OR v_disc_amt > (v_qty * v_price) THEN

@@ -3161,6 +3161,16 @@
                     </div>
 
                     <div class="space-y-0.5 text-right text-[10px]">
+                        <template x-if="activeReceipt.discount && Number(activeReceipt.discount) > 0">
+                            <div class="space-y-0.5">
+                                <div class="flex justify-between text-slate-600">
+                                    <span>Subtotal:</span><span x-text="formatRupiah((activeReceipt.total || 0) + (activeReceipt.discount || 0))"></span>
+                                </div>
+                                <div class="flex justify-between text-rose-600 font-medium">
+                                    <span>Diskon:</span><span x-text="'-' + formatRupiah(activeReceipt.discount)"></span>
+                                </div>
+                            </div>
+                        </template>
                         <div class="flex justify-between font-bold text-xs pt-1">
                             <span>TOTAL:</span><span x-text="formatRupiah(activeReceipt.total)"></span>
                         </div>
@@ -4897,11 +4907,27 @@
 
                 calculateTotal() {
                     const subtotal = this.calculateSubtotal();
+                    let itemDiscTotal = 0;
+                    if (Array.isArray(this.cart)) {
+                        itemDiscTotal = this.cart.reduce((sum, item) => {
+                            const price = Number(item.price) || 0;
+                            const qty = Number(item.qty) || 0;
+                            const discType = item.discountType || item.discount_type || 'none';
+                            const discVal = Number(item.discountValue || item.discount_value || 0);
+                            let discAmt = Number(item.discountAmount || item.discount_amount || 0);
+                            if (discType === 'percent' || discType === 'percentage') {
+                                discAmt = Math.round((price * qty * discVal) / 100);
+                            } else if ((discType === 'nominal' || discType === 'fixed' || discType === 'rp') && discVal > 0) {
+                                discAmt = discVal;
+                            }
+                            return sum + Math.min(price * qty, Math.max(0, discAmt));
+                        }, 0);
+                    }
                     let disc = Number(this.discount);
                     if (!Number.isFinite(disc) || disc < 0) {
                         disc = 0;
                     }
-                    const total = subtotal - disc;
+                    const total = subtotal - itemDiscTotal - disc;
                     return Number.isFinite(total) && total >= 0 ? total : 0;
                 },
 
@@ -5094,6 +5120,16 @@
                                 costPrice = cp;
                             }
 
+                            const discType = cartItem.discountType || cartItem.discount_type || 'none';
+                            const discVal = Number(cartItem.discountValue || cartItem.discount_value || 0);
+                            let discAmt = Number(cartItem.discountAmount || cartItem.discount_amount || 0);
+                            if (discType === 'percent' || discType === 'percentage') {
+                                discAmt = Math.round((price * qty * discVal) / 100);
+                            } else if ((discType === 'nominal' || discType === 'fixed' || discType === 'rp') && discVal > 0) {
+                                discAmt = discVal;
+                            }
+                            discAmt = Math.min(price * qty, Math.max(0, discAmt));
+
                             cartItemsSnapshot.push({
                                 id: cartItem.id,
                                 productId: cartItem.id,
@@ -5103,7 +5139,10 @@
                                 price: price,
                                 costPrice: costPrice,
                                 qty: qty,
-                                unit: cartItem.unit || (prod ? prod.unit : 'Unit')
+                                unit: cartItem.unit || (prod ? prod.unit : 'Unit'),
+                                discountType: discType,
+                                discountValue: discVal,
+                                discountAmount: discAmt
                             });
                         }
 
@@ -5177,7 +5216,8 @@
                             p_due_date: (this.paymentMethod === 'Kredit' && this.dueDate) ? this.dueDate : null,
                             p_customer_name: this.customerName || 'Pelanggan Umum',
                             p_customer_farm: this.customerFarm || '-',
-                            p_inv_no: invNo
+                            p_inv_no: invNo,
+                            p_discount: Number(this.discount || 0)
                         });
 
                         if (trxErr || !atomicTrx || !atomicTrx.success) {
@@ -5211,6 +5251,7 @@
                             partyName: partyNameStr,
                             items: cartItemsSnapshot,
                             total: grandTotal,
+                            discount: Number(this.discount || 0),
                             profit: grossProfit,
                             status: 'Completed'
                         };
@@ -5227,6 +5268,8 @@
                             customerName: this.customerName || 'Pelanggan Umum',
                             customerFarm: this.customerFarm || '-',
                             items: cartItemsSnapshot.map(item => ({ ...item })),
+                            subtotal: this.calculateSubtotal(),
+                            discountTotal: Number(atomicTrx.discount_total !== undefined ? atomicTrx.discount_total : (this.discount || 0)),
                             total: grandTotal,
                             paidAmount: paid,
                             remaining: remaining,
