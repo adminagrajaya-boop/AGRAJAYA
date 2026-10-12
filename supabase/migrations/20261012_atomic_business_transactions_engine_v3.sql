@@ -366,7 +366,9 @@ BEGIN
         subtotal, discount_total, total, paid_amount, remaining, project_id, quotation_id,
         transaction_id, created_by, payment_method
     ) VALUES (
-        v_inv_no, NULL, v_cust_name, v_cust_farm, p_due_date, p_transaction_date, v_status,
+        v_inv_no, NULL, v_cust_name, v_cust_farm,
+        CASE WHEN p_payment_method IN ('Tunai', 'Tunai Lunas', 'TunaiLunas', 'Transfer', 'QRIS') THEN NULL ELSE p_due_date END,
+        p_transaction_date, v_status,
         v_gross_total, v_discount_total, v_calc_net_total, v_paid, v_remaining, NULL, NULL,
         v_trx_id, v_caller_id, v_stored_method
     ) RETURNING id INTO v_inv_id;
@@ -1228,7 +1230,9 @@ BEGIN
         created_by, payment_method
     ) VALUES (
         p_inv_no, v_qt.customer_id, COALESCE(p_customer_name, v_qt.customer_name, 'Pelanggan'),
-        COALESCE(p_customer_farm, '-'), p_due_date, p_inv_date, v_status,
+        COALESCE(p_customer_farm, '-'),
+        CASE WHEN p_payment_method IN ('Tunai', 'Tunai Lunas', 'TunaiLunas') THEN NULL ELSE p_due_date END,
+        p_inv_date, v_status,
         v_gross_total, v_discount_total, v_net_total, v_paid, v_remaining, v_qt.project_id, p_quotation_id,
         v_caller_id, v_stored_method
     ) RETURNING id INTO v_inv_id;
