@@ -737,6 +737,12 @@
                                             </td>
                                         </tr>
                                     </template>
+                                    <tr x-show="!penawaranList || penawaranList.length === 0">
+                                        <td colspan="6" class="p-8 text-center text-slate-400">
+                                            <i class="fa-solid fa-file-lines text-2xl mb-2 text-slate-300 block"></i>
+                                            Belum ada penawaran harga (Quotation). Klik tombol Tambah Penawaran untuk membuat baru.
+                                        </td>
+                                    </tr>
                                 </tbody>
                             </table>
                         </div>
@@ -849,6 +855,12 @@
                                             </td>
                                         </tr>
                                     </template>
+                                    <tr x-show="!invoiceList || invoiceList.length === 0">
+                                        <td colspan="8" class="p-8 text-center text-slate-400">
+                                            <i class="fa-solid fa-file-invoice text-2xl mb-2 text-slate-300 block"></i>
+                                            Belum ada invoice / faktur tagihan. Transaksi baru akan muncul di sini.
+                                        </td>
+                                    </tr>
                                 </tbody>
                             </table>
                         </div>
@@ -930,6 +942,12 @@
                                             </td>
                                         </tr>
                                     </template>
+                                    <tr x-show="!piutangList || (piutangList || []).filter(item => item.status !== 'Dibatalkan' && item.status !== 'Lunas' && Number(item.remaining) > 0).length === 0">
+                                        <td colspan="8" class="p-8 text-center text-slate-400">
+                                            <i class="fa-solid fa-hand-holding-dollar text-2xl mb-2 text-slate-300 block"></i>
+                                            Tidak ada saldo piutang aktif saat ini. Seluruh tagihan berstatus lunas atau belum ada transaksi kredit.
+                                        </td>
+                                    </tr>
                                 </tbody>
                             </table>
                         </div>
@@ -3614,8 +3632,8 @@
 
     <!-- ALPINE.JS APPLICATION LOGIC -->
     <script>
-        // PWA Service Worker & Stale Cache Invalidation (v5.8)
-        const CURRENT_APP_VERSION = 'v5.8';
+        // PWA Service Worker & Stale Cache Invalidation (v5.9)
+        const CURRENT_APP_VERSION = 'v5.9';
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', async () => {
                 try {
@@ -4220,11 +4238,17 @@
                             .select('id, qt_no, customer_id, customer_name, project_id, valid_until, status, subtotal, discount_total, total, created_at')
                             .order('id', { ascending: false });
 
-                        if (!qtFetchErr && Array.isArray(remoteQuotations)) {
-                            const { data: remoteQtItems } = await supabaseClient
+                        if (qtFetchErr) throw qtFetchErr;
+
+                        if (!Array.isArray(remoteQuotations) || remoteQuotations.length === 0) {
+                            this.penawaranList = [];
+                        } else {
+                            const { data: remoteQtItems, error: qtItemsFetchErr } = await supabaseClient
                                 .from('quotation_items')
                                 .select('id, quotation_id, product_id, category, unit, price, qty, subtotal, discount_type, discount_value, discount_amount')
                                 .order('id', { ascending: true });
+
+                            if (qtItemsFetchErr) throw qtItemsFetchErr;
 
                             const itemsByQtId = {};
                             if (Array.isArray(remoteQtItems)) {
@@ -4283,11 +4307,17 @@
                             .select('id, inv_no, customer_id, customer_name, customer_farm, due_date, invoice_date, status, subtotal, discount_total, total, paid_amount, remaining, project_id, quotation_id, transaction_id, created_at')
                             .order('id', { ascending: false });
 
-                        if (!invFetchErr && Array.isArray(remoteInvoices) && remoteInvoices.length > 0) {
-                            const { data: remoteInvItems } = await supabaseClient
+                        if (invFetchErr) throw invFetchErr;
+
+                        if (!Array.isArray(remoteInvoices) || remoteInvoices.length === 0) {
+                            this.invoiceList = [];
+                        } else {
+                            const { data: remoteInvItems, error: invItemsFetchErr } = await supabaseClient
                                 .from('invoice_items')
                                 .select('id, invoice_id, product_id, category, unit, price, cost_price, qty, subtotal, discount_type, discount_value, discount_amount')
                                 .order('id', { ascending: true });
+
+                            if (invItemsFetchErr) throw invItemsFetchErr;
 
                             const itemsByInvId = {};
                             if (Array.isArray(remoteInvItems)) {
@@ -4351,7 +4381,11 @@
                             .select('id, inv_no, customer_name, due_date, status, total, paid, remaining, invoice_id, created_at')
                             .order('id', { ascending: false });
 
-                        if (!recFetchErr && Array.isArray(remoteReceivables) && remoteReceivables.length > 0) {
+                        if (recFetchErr) throw recFetchErr;
+
+                        if (!Array.isArray(remoteReceivables) || remoteReceivables.length === 0) {
+                            this.piutangList = [];
+                        } else {
                             this.piutangList = remoteReceivables.map(row => ({
                                 id: Number(row.id),
                                 supabaseId: Number(row.id),
@@ -4366,36 +4400,111 @@
                             }));
                         }
 
-                        // Keep a local backup/cache, but no longer treat it as the source of truth.
                         // PAYMENT HISTORY FROM SUPABASE LIVE
-                        try {
-                            const { data: remotePayments, error: payFetchErr } = await supabaseClient
-                                .from('payment_history')
-                                .select('id, payment_no, invoice_id, inv_no, customer_name, amount, payment_method, account_id, status, created_by, created_at, voided_at, voided_by, void_reason')
-                                .order('id', { ascending: false });
+                        const { data: remotePayments, error: payFetchErr } = await supabaseClient
+                            .from('payment_history')
+                            .select('id, payment_no, invoice_id, inv_no, customer_name, amount, payment_method, account_id, status, created_by, created_at, voided_at, voided_by, void_reason')
+                            .order('id', { ascending: false });
 
-                            if (!payFetchErr && Array.isArray(remotePayments)) {
-                                this.paymentHistory = remotePayments.map(row => ({
-                                    id: Number(row.id),
-                                    supabaseId: Number(row.id),
-                                    paymentNo: row.payment_no,
-                                    invoiceId: Number(row.invoice_id) || null,
-                                    invNo: row.inv_no,
-                                    customerName: row.customer_name,
-                                    amount: Number(row.amount || 0),
-                                    paymentMethod: row.payment_method,
-                                    accountId: Number(row.account_id) || null,
-                                    status: row.status || 'VALID',
-                                    createdBy: row.created_by,
-                                    createdAt: row.created_at,
-                                    date: this.normalizeSupabaseDate(row.created_at) || this.getLocalDateString(),
-                                    voidedAt: row.voided_at,
-                                    voidedBy: row.voided_by,
-                                    voidReason: row.void_reason
-                                }));
-                            }
-                        } catch (payErr) {
-                            console.warn('Warning: failed to load payment_history from Supabase', payErr);
+                        if (payFetchErr) throw payFetchErr;
+
+                        if (!Array.isArray(remotePayments) || remotePayments.length === 0) {
+                            this.paymentHistory = [];
+                        } else {
+                            this.paymentHistory = remotePayments.map(row => ({
+                                id: Number(row.id),
+                                supabaseId: Number(row.id),
+                                paymentNo: row.payment_no,
+                                invoiceId: Number(row.invoice_id) || null,
+                                invNo: row.inv_no,
+                                customerName: row.customer_name,
+                                amount: Number(row.amount || 0),
+                                paymentMethod: row.payment_method,
+                                accountId: Number(row.account_id) || null,
+                                status: row.status || 'VALID',
+                                createdBy: row.created_by,
+                                createdAt: row.created_at,
+                                date: this.normalizeSupabaseDate(row.created_at) || this.getLocalDateString(),
+                                voidedAt: row.voided_at,
+                                voidedBy: row.voided_by,
+                                voidReason: row.void_reason
+                            }));
+                        }
+
+                        // PURCHASES & PAYABLES FROM SUPABASE LIVE
+                        const { data: remotePurchases, error: purchFetchErr } = await supabaseClient
+                            .from('purchases')
+                            .select('id, po_no, supplier_name, purchase_date, payment_method, total, paid_amount, remaining, status, created_at')
+                            .order('id', { ascending: false });
+
+                        if (purchFetchErr) throw purchFetchErr;
+
+                        if (!Array.isArray(remotePurchases) || remotePurchases.length === 0) {
+                            this.pembelianList = [];
+                        } else {
+                            this.pembelianList = remotePurchases.map(row => ({
+                                id: Number(row.id),
+                                supabaseId: Number(row.id),
+                                poNo: row.po_no,
+                                supplierName: row.supplier_name,
+                                date: this.normalizeSupabaseDate(row.purchase_date || row.created_at) || this.getLocalDateString(),
+                                paymentMethod: row.payment_method,
+                                total: Number(row.total || 0),
+                                paidAmount: Number(row.paid_amount || 0),
+                                remaining: Number(row.remaining || 0),
+                                status: row.status || 'Completed',
+                                items: []
+                            }));
+                        }
+
+                        const { data: remotePayables, error: payableFetchErr } = await supabaseClient
+                            .from('payables')
+                            .select('id, po_no, supplier_name, due_date, status, total, paid, remaining, purchase_id, created_at')
+                            .order('id', { ascending: false });
+
+                        if (payableFetchErr) throw payableFetchErr;
+
+                        if (!Array.isArray(remotePayables) || remotePayables.length === 0) {
+                            this.hutangList = [];
+                        } else {
+                            this.hutangList = remotePayables.map(row => ({
+                                id: Number(row.id),
+                                supabaseId: Number(row.id),
+                                poNo: row.po_no,
+                                supplierName: row.supplier_name,
+                                dueDate: row.due_date ? String(row.due_date) : '',
+                                status: row.status || 'Belum Bayar',
+                                total: Number(row.total || 0),
+                                paid: Number(row.paid || 0),
+                                remaining: Number(row.remaining || 0),
+                                purchaseId: Number(row.purchase_id) || null
+                            }));
+                        }
+
+                        // TRANSACTIONS (POS) FROM SUPABASE LIVE
+                        const { data: remoteTransactions, error: trxFetchErr } = await supabaseClient
+                            .from('transactions')
+                            .select('id, trx_code, transaction_type, party_name, transaction_date, status, total, profit, payment_method, payment_account_id, items, created_at')
+                            .order('id', { ascending: false });
+
+                        if (trxFetchErr) throw trxFetchErr;
+
+                        if (!Array.isArray(remoteTransactions) || remoteTransactions.length === 0) {
+                            this.transactionHistory = [];
+                        } else {
+                            this.transactionHistory = remoteTransactions.map(row => ({
+                                id: Number(row.id),
+                                supabaseId: Number(row.id),
+                                code: row.trx_code,
+                                date: this.normalizeSupabaseDate(row.transaction_date || row.created_at) || this.getLocalDateString(),
+                                type: row.transaction_type || 'Jual',
+                                paymentMethod: row.payment_method || 'Tunai',
+                                partyName: row.party_name || '-',
+                                items: Array.isArray(row.items) ? row.items : [],
+                                total: Number(row.total || 0),
+                                profit: Number(row.profit || 0),
+                                status: row.status === 'VALID' ? 'Completed' : (row.status || 'Completed')
+                            }));
                         }
 
                         this.saveDataToStorage();
@@ -4493,16 +4602,13 @@
                 },
 
                 loadDataFromStorage() {
-                    if (!localStorage.getItem('agra_fresh_start_20260930')) {
-                        localStorage.removeItem('agra_products');
+                    if (!localStorage.getItem('agra_fresh_start_20261012')) {
                         localStorage.removeItem('agra_penawaran');
                         localStorage.removeItem('agra_invoice');
                         localStorage.removeItem('agra_piutang');
                         localStorage.removeItem('agra_pembelian');
                         localStorage.removeItem('agra_hutang');
-                        localStorage.removeItem('agra_projects');
                         localStorage.removeItem('agra_transactions');
-                        localStorage.removeItem('agra_stock_logs');
                         localStorage.removeItem('agra_payment_history');
                         localStorage.setItem('agra_counters', JSON.stringify({
                             trxCounter: 1,
@@ -4510,7 +4616,7 @@
                             qtCounter: 1,
                             invCounter: 1
                         }));
-                        localStorage.setItem('agra_fresh_start_20260930', 'true');
+                        localStorage.setItem('agra_fresh_start_20261012', 'true');
                     }
 
                     const keys = [
@@ -5191,8 +5297,14 @@
                             });
                         }
 
-                        // post_journal_entry removed per security policy
-const journalData = null; const journalError = null;
+                        const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry_secure', {
+                            p_journal_date: dateStr,
+                            p_source_type: 'TRANSACTION',
+                            p_source_id: insertedTrx.id,
+                            p_source_code: code,
+                            p_description: 'Transaksi Penjualan POS ' + code + ' - ' + partyNameStr,
+                            p_lines: journalLines
+                        });
 
                         if (journalError) {
                             console.error('Error posting journal for POS transaction:', journalError);
@@ -5461,7 +5573,7 @@ const journalData = null; const journalError = null;
                     }
 
                     const candidateInvNo = this.generateCode('INV', this.invoiceList, 'invCounter') + '-REV';
-                    
+
                     const parseNullableInteger = (value) => {
                         if (value === null || value === undefined || value === '') return null;
                         const n = Number(value);
@@ -5504,10 +5616,11 @@ const journalData = null; const journalError = null;
                         this.isCorrectInvoiceMode = false;
                         this.correctingInvoiceObj = null;
 
+                        await this.loadMasterDataFromSupabase();
                         await this.loadAccountingDataFromSupabase();
                     } catch (err) {
                         console.error('[INVOICE_CORRECTION] PIPELINE FAILED:', err);
-                        
+
                         const formatInvoiceCorrectionError = (e) => {
                             const errStr = e?.message || String(e);
                             if (errStr.includes('PAYMENT_EXISTS') || errStr.includes('HAS_ACTIVE_PAYMENTS') || errStr.includes('memiliki histori pembayaran aktif')) {
@@ -6380,8 +6493,14 @@ const journalData = null; const journalError = null;
 
                     if (journalLines.length >= 2 && computedNetTotal > 0) {
                         try {
-                            // post_journal_entry removed per security policy
-const journalData = null; const journalError = null;
+                            const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry_secure', {
+                                p_journal_date: dateStr,
+                                p_source_type: 'INVOICE',
+                                p_source_id: insertedInvId,
+                                p_source_code: invNo,
+                                p_description: 'Penjualan Invoice ' + invNo + ' (' + (qt.customerName || 'Pelanggan') + ')',
+                                p_lines: journalLines
+                            });
 
                             if (journalError) throw journalError;
                         } catch (jErr) {
@@ -6503,8 +6622,10 @@ const journalData = null; const journalError = null;
                             if (jrnData) journalIdToReverse = jrnData.id;
 
                             if (journalIdToReverse) {
-                                // reverse_journal_entry removed per security policy
-const rpcErr = null;
+                                const { data: revResult, error: rpcErr } = await supabaseClient.rpc('reverse_journal_entry_secure', {
+                                    p_original_journal_id: journalIdToReverse,
+                                    p_reversal_reason: `VOID Invoice ${inv.invNo}`
+                                });
                                 if (rpcErr) {
                                     console.error('Reverse journal RPC error:', rpcErr);
                                     this.showAppAlert('Gagal membalikkan jurnal akuntansi: ' + (rpcErr.message || rpcErr));
@@ -6908,8 +7029,14 @@ const rpcErr = null;
                             ];
                         }
 
-                        // post_journal_entry removed per security policy
-const journalData = null; const journalError = null;
+                        const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry_secure', {
+                            p_journal_date: dateStr,
+                            p_source_type: 'PURCHASE',
+                            p_source_id: insertedPurchaseId,
+                            p_source_code: poNo,
+                            p_description: 'Pembelian PO ' + poNo + ' (' + this.newPo.supplierName + ')',
+                            p_lines: journalLines
+                        });
 
                         if (journalError) {
                             console.error('Error posting journal for purchase:', journalError);
@@ -7370,131 +7497,49 @@ const journalData = null; const journalError = null;
                     }
                     const payAccountId = Number(paymentAccObj.id);
 
-                    // 7. PERSIST PAYMENT HISTORY, PAYABLES & PURCHASES WITH AUTOMATIC JOURNAL
+                    // 7. PERSIST PAYMENT HISTORY, PAYABLES & PURCHASES WITH ATOMIC BACKEND RPC
                     let insertedPayHistId = null;
-                    let remotePayId = null;
                     try {
-                        // AMBIL PURCHASE ID ASLI DARI SUPABASE JIKA TERDAFTAR DI PUBLIC.PURCHASES (NULL JIKA TIDAK ADA)
-                        let targetPurchaseId = null;
-                        const { data: remotePo, error: remotePoErr } = await supabaseClient
-                            .from('purchases')
-                            .select('id, po_no')
-                            .eq('po_no', po.poNo)
-                            .maybeSingle();
+                        let targetPurchaseId = po.supabaseId || po.id;
+                        if (!Number.isSafeInteger(Number(targetPurchaseId)) || Number(targetPurchaseId) <= 0) {
+                            const { data: remotePo, error: remotePoErr } = await supabaseClient
+                                .from('purchases')
+                                .select('id, po_no')
+                                .eq('po_no', po.poNo)
+                                .maybeSingle();
 
-                        if (remotePoErr) {
-                            throw new Error('Gagal memverifikasi data pembelian di database: ' + remotePoErr.message);
-                        }
-
-                        if (remotePo) {
-                            const poIdNum = Number(remotePo.id);
-                            if (!Number.isSafeInteger(poIdNum) || poIdNum <= 0) {
-                                throw new Error('ID pembelian dari database tidak valid untuk nomor PO: ' + po.poNo);
+                            if (remotePoErr) {
+                                throw new Error('Gagal memverifikasi data pembelian di database: ' + remotePoErr.message);
                             }
-                            targetPurchaseId = poIdNum;
-                        }
 
-                        const payHistPayload = {
-                            po_no: po.poNo,
-                            supplier_name: po.supplierName || this.activeHutang.supplierName || 'Supplier',
-                            payment_date: dateStr,
-                            payment_method: payMethod,
-                            payment_account_id: payAccountId,
-                            amount: payAmt,
-                            payment_type: 'hutang',
-                            purchase_id: targetPurchaseId,
-                            status: 'VALID',
-                            created_by: this.currentUser.id
-                        };
-
-                        // Direct payment_history insert removed per security policy
-const insertedHist = { id: Date.now() }; const histErr = null; // Mocked to bypass errors in frontend
-
-                        if (histErr) throw histErr;
-                        if (!insertedHist || !insertedHist.id) throw new Error('Gagal mendapatkan ID riwayat pembayaran.');
-                        insertedPayHistId = insertedHist.id;
-
-                        // Update public.payables
-                        const { data: remotePay } = await supabaseClient
-                            .from('payables')
-                            .select('id, paid, remaining, status')
-                            .eq('po_no', po.poNo)
-                            .maybeSingle();
-
-                        if (remotePay) {
-                            remotePayId = remotePay.id;
-                            await supabaseClient
-                                .from('payables')
-                                .update({
-                                    paid: newPaid,
-                                    remaining: newRemaining,
-                                    status: newStatus,
-                                    updated_at: new Date().toISOString()
-                                })
-                                .eq('id', remotePay.id);
-                        } else {
-                            await supabaseClient
-                                .from('payables')
-                                .insert({
-                                    po_no: po.poNo,
-                                    supplier_name: po.supplierName || this.activeHutang.supplierName || 'Supplier',
-                                    due_date: null,
-                                    status: newStatus,
-                                    total: hTotal,
-                                    paid: newPaid,
-                                    remaining: newRemaining,
-                                    purchase_id: targetPurchaseId
-                                });
-                        }
-
-                        // Update public.purchases
-                        await supabaseClient
-                            .from('purchases')
-                            .update({
-                                paid_amount: newPaid,
-                                remaining: newRemaining
-                            })
-                            .eq('po_no', po.poNo);
-
-                        // POST AUTOMATIC JOURNAL VIA RPC
-                        const journalLines = [
-                            {
-                                chart_of_account_id: payableCoaId,
-                                debit: payAmt,
-                                credit: 0,
-                                description: 'Pelunasan/cicilan hutang PO ' + po.poNo + ' (' + (po.supplierName || 'Supplier') + ')'
-                            },
-                            {
-                                chart_of_account_id: paymentCoaId,
-                                debit: 0,
-                                credit: payAmt,
-                                description: 'Pengeluaran kas/bank bayar hutang PO ' + po.poNo + ' via ' + (paymentAccObj ? paymentAccObj.name : payMethod)
+                            if (remotePo && remotePo.id) {
+                                targetPurchaseId = Number(remotePo.id);
                             }
-                        ];
-
-                        // post_journal_entry removed per security policy
-const journalData = null; const journalError = null;
-
-                        if (journalError) {
-                            console.error('Error posting journal for payable payment:', journalError);
-                            throw new Error('Posting jurnal otomatis pembayaran hutang PO ' + po.poNo + ' ke General Ledger gagal: ' + (journalError.message || journalError));
                         }
+
+                        if (!targetPurchaseId || !Number.isSafeInteger(Number(targetPurchaseId))) {
+                            throw new Error('Data PO tidak ditemukan di database untuk nomor: ' + po.poNo);
+                        }
+
+                        const { data: atomicResult, error: atomicErr } = await supabaseClient.rpc('process_payable_payment_atomic', {
+                            p_purchase_id: Number(targetPurchaseId),
+                            p_amount: payAmt,
+                            p_payment_method: payMethod,
+                            p_payment_account_id: payAccountId,
+                            p_note: 'Pembayaran hutang PO ' + po.poNo
+                        });
+
+                        if (atomicErr) throw atomicErr;
+                        if (!atomicResult || !atomicResult.success) {
+                            throw new Error('Proses pembayaran hutang gagal di backend.');
+                        }
+
+                        insertedPayHistId = atomicResult.payment_id;
+                        newPaid = Number(atomicResult.new_paid);
+                        newRemaining = Number(atomicResult.new_remaining);
+                        newStatus = atomicResult.status;
                     } catch (payErr) {
-                        console.error('Error processing payable payment or journal:', payErr);
-                        // Revert remote state if update or journal failed
-                        if (remotePayId) {
-                            try {
-                                await supabaseClient.from('payables').update({ paid: hPaid, remaining: hRemaining, status: this.activeHutang.status }).eq('id', remotePayId);
-                            } catch (pErr) { console.error('Revert payables error:', pErr); }
-                        }
-                        try {
-                            await supabaseClient.from('purchases').update({ paid_amount: poPaid, remaining: poRemaining }).eq('po_no', po.poNo);
-                        } catch (poErr) { console.error('Revert purchases error:', poErr); }
-                        if (insertedPayHistId) {
-                            try {
-                                // Delete payment_history removed per security policy
-                            } catch (cErr) { console.error('Cleanup payment_history error:', cErr); }
-                        }
+                        console.error('Error processing payable payment atomic RPC:', payErr);
                         this.showAppAlert('Gagal memproses pembayaran / posting jurnal hutang di database: ' + (payErr.message || payErr) + '. Pembayaran dibatalkan.');
                         return;
                     }
@@ -7520,7 +7565,10 @@ const journalData = null; const journalError = null;
                         amount: payAmt
                     });
 
-                    // Atomic Save
+                    // Atomic Save & Sync
+                    if (typeof this.loadAccountingDataFromSupabase === 'function') {
+                        await this.loadAccountingDataFromSupabase();
+                    }
                     this.saveDataToStorage();
                     this.showPayHutangModal = false;
                 },
@@ -7599,8 +7647,10 @@ const journalData = null; const journalError = null;
 
                         // 2. EKSEKUSI REVERSAL JOURNAL VIA RPC DIBATALKAN JIKA RPC GAGAL
                         if (origJournalId) {
-                            // reverse_journal_entry removed per security policy
-const revResult = null; const revErr = null;
+                            const { data: revResult, error: revErr } = await supabaseClient.rpc('reverse_journal_entry_secure', {
+                                p_original_journal_id: origJournalId,
+                                p_reversal_reason: `VOID Transaksi POS ${trx.code}`
+                            });
 
                             if (revErr) {
                                 console.error('Error reversing journal entry:', revErr);
@@ -9706,15 +9756,26 @@ const revResult = null; const revErr = null;
                             }
                         ];
 
-                        // post_journal_entry removed per security policy
-const journalData = null; const journalError = null;
+                        const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry_secure', {
+                            p_journal_date: date,
+                            p_source_type: 'EXPENSE',
+                            p_source_id: insertedExpense.id,
+                            p_source_code: expenseNo,
+                            p_description: 'Pengeluaran Beban ' + expenseNo + ' - ' + payee + ' (' + expenseCoaName + ')',
+                            p_lines: journalLines
+                        });
 
                         if (journalError) {
                             console.error('Error posting journal for expense:', journalError);
-                            throw new Error('Catatan beban operasional ' + expenseNo + ' tersimpan di database, namun posting jurnal otomatis ke General Ledger gagal: ' + (journalError.message || journalError));
+                            try {
+                                await supabaseClient.from('expenses').delete().eq('id', insertedExpense.id);
+                            } catch (cleanExpErr) {
+                                console.error('Error cleaning up orphaned expense row:', cleanExpErr);
+                            }
+                            throw new Error('Posting jurnal otomatis beban operasional ' + expenseNo + ' ke General Ledger gagal: ' + (journalError.message || journalError));
                         }
 
-                        const jrnNo = (Array.isArray(journalData) && journalData.length > 0) ? journalData[0].journal_no : 'POSTED';
+                        const jrnNo = journalData?.journal_no || (Array.isArray(journalData) && journalData[0]?.journal_no) || 'POSTED';
                         this.showAppAlert('Beban operasional ' + expenseNo + ' sebesar ' + this.formatRupiah(amount) + ' berhasil dicatat dan diposting ke Jurnal Umum (' + jrnNo + ').');
 
                         this.showExpenseModal = false;
@@ -9865,15 +9926,26 @@ const journalData = null; const journalError = null;
                             ];
                         }
 
-                        // post_journal_entry removed per security policy
-const journalData = null; const journalError = null;
+                        const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry_secure', {
+                            p_journal_date: date,
+                            p_source_type: 'EQUITY',
+                            p_source_id: insertedEquity.id,
+                            p_source_code: equityNo,
+                            p_description: 'Transaksi Ekuitas ' + equityNo + ' - ' + (type === 'CAPITAL_IN' ? 'Setor Modal' : 'Tarik Prive') + ' (' + equityCoaName + ')',
+                            p_lines: journalLines
+                        });
 
                         if (journalError) {
                             console.error('Error posting journal for equity:', journalError);
-                            throw new Error('Transaksi ekuitas ' + equityNo + ' tersimpan di database, namun posting jurnal otomatis ke General Ledger gagal: ' + (journalError.message || journalError));
+                            try {
+                                await supabaseClient.from('equity_transactions').delete().eq('id', insertedEquity.id);
+                            } catch (cleanEqErr) {
+                                console.error('Error cleaning up orphaned equity row:', cleanEqErr);
+                            }
+                            throw new Error('Posting jurnal otomatis transaksi ekuitas ' + equityNo + ' ke General Ledger gagal: ' + (journalError.message || journalError));
                         }
 
-                        const jrnNo = (Array.isArray(journalData) && journalData.length > 0) ? journalData[0].journal_no : 'POSTED';
+                        const jrnNo = journalData?.journal_no || (Array.isArray(journalData) && journalData[0]?.journal_no) || 'POSTED';
                         this.showAppAlert('Transaksi ekuitas ' + equityNo + ' sebesar ' + this.formatRupiah(amount) + ' berhasil dicatat dan diposting ke Jurnal Umum (' + jrnNo + ').');
 
                         this.showEquityModal = false;
