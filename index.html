@@ -2625,11 +2625,11 @@
                 </div>
 
                 <button @click="completeTransaction()"
-                    :disabled="paymentMethod === 'Tunai' && cashGiven < calculateTotal()"
-                    :class="(paymentMethod === 'Tunai' && cashGiven < calculateTotal()) ? 'bg-slate-300 cursor-not-allowed' : 'bg-brand-600 hover:bg-brand-700 shadow-md shadow-brand-600/30'"
+                    :disabled="isCompletingTransaction || (paymentMethod === 'Tunai' && cashGiven < calculateTotal())"
+                    :class="(isCompletingTransaction || (paymentMethod === 'Tunai' && cashGiven < calculateTotal())) ? 'bg-slate-300 cursor-not-allowed' : 'bg-brand-600 hover:bg-brand-700 shadow-md shadow-brand-600/30'"
                     class="w-full py-3 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2">
-                    <i class="fa-solid fa-check-circle"></i>
-                    <span>Selesaikan Transaksi</span>
+                    <i class="fa-solid" :class="isCompletingTransaction ? 'fa-spinner fa-spin' : 'fa-check-circle'"></i>
+                    <span x-text="isCompletingTransaction ? 'Memproses Transaksi...' : 'Selesaikan Transaksi'"></span>
                 </button>
             </div>
         </div>
@@ -2735,9 +2735,11 @@
                 </div>
 
                 <button @click="executeConvertQuotation()"
-                    class="w-full py-3 text-white font-bold bg-brand-600 hover:bg-brand-700 shadow-md shadow-brand-600/30 rounded-xl text-xs transition-all flex items-center justify-center gap-2">
-                    <i class="fa-solid fa-file-invoice"></i>
-                    <span>Terbitkan Invoice</span>
+                    :disabled="isConvertingQuotation"
+                    :class="isConvertingQuotation ? 'bg-slate-300 cursor-not-allowed' : 'bg-brand-600 hover:bg-brand-700 shadow-md shadow-brand-600/30'"
+                    class="w-full py-3 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2">
+                    <i class="fa-solid" :class="isConvertingQuotation ? 'fa-spinner fa-spin' : 'fa-file-invoice'"></i>
+                    <span x-text="isConvertingQuotation ? 'Menerbitkan Invoice...' : 'Terbitkan Invoice'"></span>
                 </button>
             </div>
         </div>
@@ -2991,9 +2993,11 @@
                     </div>
 
                     <button @click="savePurchase()"
-                        class="w-full py-2.5 bg-industrial-800 hover:bg-industrial-900 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-md">
-                        <i class="fa-solid fa-floppy-disk"></i>
-                        <span>Simpan Pembelian & Tambah Stok</span>
+                        :disabled="isSavingPurchase"
+                        :class="isSavingPurchase ? 'bg-slate-300 cursor-not-allowed' : 'bg-industrial-800 hover:bg-industrial-900 shadow-md'"
+                        class="w-full py-2.5 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2">
+                        <i class="fa-solid" :class="isSavingPurchase ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
+                        <span x-text="isSavingPurchase ? 'Menyimpan Pembelian...' : 'Simpan Pembelian & Tambah Stok'"></span>
                     </button>
                 </div>
             </div>
@@ -3707,6 +3711,10 @@
                 masterDataLoading: false,
                 masterDataSyncError: '',
                 isVoiding: false,
+                isVoidingInvoice: false,
+                isCompletingTransaction: false,
+                isSavingPurchase: false,
+                isConvertingQuotation: false,
 
                 // ==========================================
                 // ACCOUNTING MODULE FOUNDATION (GL & COA)
@@ -4980,11 +4988,14 @@
                 },
 
                 async completeTransaction() {
-                    // 1. VALIDASI CART
-                    if (!Array.isArray(this.cart) || this.cart.length === 0) {
-                        this.showAppAlert('Keranjang transaksi masih kosong.');
-                        return;
-                    }
+                    if (this.isCompletingTransaction) return;
+                    this.isCompletingTransaction = true;
+                    try {
+                        // 1. VALIDASI CART
+                        if (!Array.isArray(this.cart) || this.cart.length === 0) {
+                            this.showAppAlert('Keranjang transaksi masih kosong.');
+                            return;
+                        }
 
                     // 2. VALIDASI TOTAL & DISCOUNT
                     let disc = Number(this.discount);
@@ -5413,7 +5424,10 @@
                     this.showReceiptModal = true;
                     this.saveDataToStorage();
                     this.clearCart();
-                },
+                } finally {
+                    this.isCompletingTransaction = false;
+                }
+            },
 
                 // QUOTATION LOGIC WITH DISCOUNT SUPPORT
                 openAddQuotationModal() {
@@ -6098,15 +6112,21 @@
 
                 async executeConvertQuotation() {
                     if (!this.convertQtData) return;
-                    const qt = this.convertQtData;
-                    const options = {
-                        paymentMethod: this.convertPaymentMethod,
-                        dueDate: this.convertDueDate,
-                        dpAmount: this.convertDpAmount,
-                        paymentAccountId: this.convertPaymentAccountId
-                    };
-                    this.showConvertModal = false;
-                    await this.convertQuotationToInvoice(qt, options);
+                    if (this.isConvertingQuotation) return;
+                    this.isConvertingQuotation = true;
+                    try {
+                        const qt = this.convertQtData;
+                        const options = {
+                            paymentMethod: this.convertPaymentMethod,
+                            dueDate: this.convertDueDate,
+                            dpAmount: this.convertDpAmount,
+                            paymentAccountId: this.convertPaymentAccountId
+                        };
+                        this.showConvertModal = false;
+                        await this.convertQuotationToInvoice(qt, options);
+                    } finally {
+                        this.isConvertingQuotation = false;
+                    }
                 },
 
                 async convertQuotationToInvoice(qt, options) {
@@ -6586,33 +6606,60 @@
                         this.showAppAlert('Hanya Owner dan Admin yang berhak membatalkan (VOID) Invoice.');
                         return;
                     }
-                    if (inv.status === 'Void' || inv.status === 'Dibatalkan') {
-                        this.showAppAlert(`Invoice ${inv.invNo || ''} sudah berstatus Dibatalkan / Void.`);
-                        return;
-                    }
-
-                    const historyList = Array.isArray(this.paymentHistory) ? this.paymentHistory : (Array.isArray(this.paymentHistoryList) ? this.paymentHistoryList : []);
-                    const invNoStr = inv.invNo || inv.inv_no || '';
-                    const invIdNum = inv.id || inv.supabaseId;
-                    const payments = historyList.filter(p => (p.invNo === invNoStr || (p.invoiceId && Number(p.invoiceId) === Number(invIdNum))) && p.status !== 'VOID');
-                    if ((payments && payments.length > 0) || inv.status === 'Lunas') {
-                        await window.showAppAlert(
-                            `Invoice ${invNoStr} tidak dapat dibatalkan karena ${inv.status === 'Lunas' ? 'invoice sudah LUNAS' : 'sudah memiliki ' + payments.length + ' pembayaran aktif'}.\n\n` +
-                            `Jika terdapat kesalahan input pembayaran, silakan VOID pembayaran terlebih dahulu melalui menu Riwayat Bayar.\n\n` +
-                            `Setelah pembayaran direkonsiliasi, invoice dapat diproses sesuai aturan.`,
-                            'Pembatalan Invoice Ditolak',
-                            'warning'
-                        );
-                        return;
-                    }
-
-                    let warnMsg = `Yakin membatalkan (VOID) Invoice ${inv.invNo}?\n\nPerhatian:\n1. Status Invoice akan menjadi Dibatalkan.\n2. Jurnal akuntansi terkait invoice ini (Piutang & Penjualan) akan dibalikkan (reverse) secara otomatis oleh sistem.\n3. Saldo Piutang (jika ada) akan dihapus.\n4. Quotation asal (jika ada) akan kembali berstatus Approved.`;
-
-                    const confirmCancel = await this.showAppConfirm(warnMsg, 'Batal / VOID Invoice', { confirmText: 'Proses VOID', variant: 'danger' });
-                    if (!confirmCancel) return;
-
+                    if (this.isVoidingInvoice) return;
+                    this.isVoidingInvoice = true;
                     try {
-                        if (supabaseClient && this.isAuthenticated) {
+                        if (inv.status === 'Void' || inv.status === 'Dibatalkan') {
+                            this.showAppAlert(`Invoice ${inv.invNo || ''} sudah berstatus Dibatalkan / Void.`);
+                            return;
+                        }
+
+                        const historyList = Array.isArray(this.paymentHistory) ? this.paymentHistory : (Array.isArray(this.paymentHistoryList) ? this.paymentHistoryList : []);
+                        const invNoStr = inv.invNo || inv.inv_no || '';
+                        const invIdNum = inv.id || inv.supabaseId;
+                        const payments = historyList.filter(p => (p.invNo === invNoStr || (p.invoiceId && Number(p.invoiceId) === Number(invIdNum))) && p.status !== 'VOID');
+                        if ((payments && payments.length > 0) || inv.status === 'Lunas') {
+                            await window.showAppAlert(
+                                `Invoice ${invNoStr} tidak dapat dibatalkan karena ${inv.status === 'Lunas' ? 'invoice sudah LUNAS' : 'sudah memiliki ' + payments.length + ' pembayaran aktif'}.\n\n` +
+                                `Jika terdapat kesalahan input pembayaran, silakan VOID pembayaran terlebih dahulu melalui menu Riwayat Bayar.\n\n` +
+                                `Setelah pembayaran direkonsiliasi, invoice dapat diproses sesuai aturan.`,
+                                'Pembatalan Invoice Ditolak',
+                                'warning'
+                            );
+                            return;
+                        }
+
+                        let warnMsg = `Yakin membatalkan (VOID) Invoice ${inv.invNo}?\n\nPerhatian:\n1. Status Invoice akan menjadi Dibatalkan.\n2. Jurnal akuntansi terkait invoice ini (Piutang & Penjualan) akan dibalikkan (reverse) secara otomatis oleh sistem.\n3. Saldo Piutang (jika ada) akan dihapus.\n4. Quotation asal (jika ada) akan kembali berstatus Approved.`;
+
+                        const confirmCancel = await this.showAppConfirm(warnMsg, 'Batal / VOID Invoice', { confirmText: 'Proses VOID', variant: 'danger' });
+                        if (!confirmCancel) return;
+
+                        // ATTEMPT SERVER-SIDE ATOMIC VOID FIRST (Single Transaction)
+                        let atomicExecuted = false;
+                        if (supabaseClient && this.isAuthenticated && Number.isSafeInteger(Number(invIdNum)) && Number(invIdNum) > 0) {
+                            try {
+                                const { data: atomicData, error: atomicErr } = await supabaseClient.rpc('void_invoice_atomic', {
+                                    p_invoice_id: Number(invIdNum),
+                                    p_reason: `VOID Invoice ${inv.invNo}`
+                                });
+
+                                if (!atomicErr && atomicData && atomicData.success) {
+                                    atomicExecuted = true;
+                                    if (inv.quotationId) {
+                                        const localQt = this.penawaranList.find(q => q.id === inv.quotationId);
+                                        if (localQt) localQt.status = 'Approved';
+                                    }
+                                } else if (atomicErr && atomicErr.message && !atomicErr.message.includes('function') && !atomicErr.message.includes('does not exist')) {
+                                    console.error('void_invoice_atomic business error:', atomicErr);
+                                    this.showAppAlert('Gagal membatalkan invoice: ' + (atomicErr.message || atomicErr));
+                                    return;
+                                }
+                            } catch (atomicEx) {
+                                console.warn('void_invoice_atomic fallback:', atomicEx);
+                            }
+                        }
+
+                        if (!atomicExecuted && supabaseClient && this.isAuthenticated) {
                             let journalIdToReverse = null;
                             const { data: jrnData, error: jrnErr } = await supabaseClient
                                 .from('journal_entries')
@@ -6666,23 +6713,24 @@
                                 if (localQt) localQt.status = 'Approved';
                             }
                         }
+
+                        inv.status = 'Dibatalkan';
+                        inv.remaining = 0;
+                        this.saveDataToStorage();
+
+                        const recIndex = this.piutangList.findIndex(p => p.invNo === inv.invNo);
+                        if (recIndex !== -1) {
+                            this.piutangList[recIndex].status = 'Dibatalkan';
+                            this.piutangList[recIndex].remaining = 0;
+                        }
+
+                        this.showAppAlert(`Invoice ${inv.invNo} berhasil dibatalkan (VOID). Jurnal akuntansi telah direverse secara otomatis.`);
                     } catch (err) {
                         console.error('Void invoice error:', err);
                         this.showAppAlert('Gagal membatalkan invoice: ' + (err.message || err));
-                        return;
+                    } finally {
+                        this.isVoidingInvoice = false;
                     }
-
-                    inv.status = 'Dibatalkan';
-                    inv.remaining = 0;
-                    this.saveDataToStorage();
-
-                    const recIndex = this.piutangList.findIndex(p => p.invNo === inv.invNo);
-                    if (recIndex !== -1) {
-                        this.piutangList[recIndex].status = 'Dibatalkan';
-                        this.piutangList[recIndex].remaining = 0;
-                    }
-
-                    this.showAppAlert(`Invoice ${inv.invNo} berhasil dibatalkan (VOID). Jurnal akuntansi telah direverse secara otomatis.`);
                 },
 
                 async markInvoiceAsCashPaid(inv) {
@@ -6787,10 +6835,13 @@
                 },
 
                 async savePurchase() {
-                    if (!this.newPo.supplierName || !this.newPo.items || this.newPo.items.length === 0) {
-                        this.showAppAlert('Lengkapi nama supplier dan item pembelian.');
-                        return;
-                    }
+                    if (this.isSavingPurchase) return;
+                    this.isSavingPurchase = true;
+                    try {
+                        if (!this.newPo.supplierName || !this.newPo.items || this.newPo.items.length === 0) {
+                            this.showAppAlert('Lengkapi nama supplier dan item pembelian.');
+                            return;
+                        }
 
                     // VALIDASI AUTH SESSION UNTUK PERSISTENCE OPERASIONAL
                     if (!supabaseClient || !this.isAuthenticated || !this.currentUser || !this.currentUser.id) {
@@ -7132,7 +7183,10 @@
 
                     this.saveDataToStorage();
                     this.showAddPurchaseModal = false;
-                },
+                } finally {
+                    this.isSavingPurchase = false;
+                }
+            },
 
                 // PIUTANG & HUTANG PAYMENTS
                 viewPaymentHistory(item) {
@@ -7641,57 +7695,80 @@
                             }
                         }
 
+                        // 1. ATTEMPT SERVER-SIDE ATOMIC VOID FIRST (Single Transaction)
+                        let atomicExecuted = false;
+                        if (supabaseClient && this.isAuthenticated && Number.isSafeInteger(trxId) && trxId > 0) {
+                            try {
+                                const { data: atomicData, error: atomicErr } = await supabaseClient.rpc('void_pos_transaction_atomic', {
+                                    p_transaction_id: trxId,
+                                    p_reason: `VOID Transaksi POS ${trx.code}`
+                                });
+
+                                if (!atomicErr && atomicData && atomicData.success) {
+                                    atomicExecuted = true;
+                                } else if (atomicErr && atomicErr.message && !atomicErr.message.includes('function') && !atomicErr.message.includes('does not exist')) {
+                                    console.error('void_pos_transaction_atomic business error:', atomicErr);
+                                    this.showAppAlert('Gagal membatalkan transaksi POS: ' + (atomicErr.message || atomicErr));
+                                    return;
+                                }
+                            } catch (atomicEx) {
+                                console.warn('void_pos_transaction_atomic fallback:', atomicEx);
+                            }
+                        }
+
                         let origJournalId = null;
-                        if (Number.isSafeInteger(trxId) && trxId > 0) {
-                            const { data: origJournal, error: lookupErr } = await supabaseClient
-                                .from('journal_entries')
-                                .select('id, journal_no, status, is_reversal')
-                                .eq('source_type', 'TRANSACTION')
-                                .eq('source_id', trxId)
-                                .eq('is_reversal', false)
-                                .eq('status', 'POSTED')
-                                .maybeSingle();
+                        if (!atomicExecuted) {
+                            if (Number.isSafeInteger(trxId) && trxId > 0) {
+                                const { data: origJournal, error: lookupErr } = await supabaseClient
+                                    .from('journal_entries')
+                                    .select('id, journal_no, status, is_reversal')
+                                    .eq('source_type', 'TRANSACTION')
+                                    .eq('source_id', trxId)
+                                    .eq('is_reversal', false)
+                                    .eq('status', 'POSTED')
+                                    .maybeSingle();
 
-                            if (lookupErr) {
-                                console.error('Error looking up original journal:', lookupErr);
-                                this.showAppAlert('Gagal memverifikasi status jurnal transaksi di database: ' + (lookupErr.message || lookupErr) + '. Pembatalan dibatalkan.');
-                                return;
+                                if (lookupErr) {
+                                    console.error('Error looking up original journal:', lookupErr);
+                                    this.showAppAlert('Gagal memverifikasi status jurnal transaksi di database: ' + (lookupErr.message || lookupErr) + '. Pembatalan dibatalkan.');
+                                    return;
+                                }
+
+                                if (origJournal && origJournal.id) {
+                                    origJournalId = origJournal.id;
+                                }
                             }
 
-                            if (origJournal && origJournal.id) {
-                                origJournalId = origJournal.id;
+                            // 2. EKSEKUSI REVERSAL JOURNAL VIA RPC DIBATALKAN JIKA RPC GAGAL
+                            if (origJournalId) {
+                                const { data: revResult, error: revErr } = await supabaseClient.rpc('reverse_journal_entry_secure', {
+                                    p_original_journal_id: origJournalId,
+                                    p_reversal_reason: `VOID Transaksi POS ${trx.code}`
+                                });
+
+                                if (revErr) {
+                                    console.error('Error reversing journal entry:', revErr);
+                                    this.showAppAlert('Gagal membuat jurnal pembalik (reversal) di database: ' + (revErr.message || revErr) + '. Pembatalan transaksi dibatalkan.');
+                                    return;
+                                }
                             }
-                        }
 
-                        // 2. EKSEKUSI REVERSAL JOURNAL VIA RPC DIBATALKAN JIKA RPC GAGAL
-                        if (origJournalId) {
-                            const { data: revResult, error: revErr } = await supabaseClient.rpc('reverse_journal_entry_secure', {
-                                p_original_journal_id: origJournalId,
-                                p_reversal_reason: `VOID Transaksi POS ${trx.code}`
-                            });
+                            // 3. UPDATE TRANSACTION STATUS DI SUPABASE LIVE
+                            if (Number.isSafeInteger(trxId) && trxId > 0) {
+                                const { error: updateTrxErr } = await supabaseClient
+                                    .from('transactions')
+                                    .update({
+                                        status: 'VOID',
+                                        voided_at: new Date().toISOString(),
+                                        voided_by: this.currentUser.id
+                                    })
+                                    .eq('id', trxId);
 
-                            if (revErr) {
-                                console.error('Error reversing journal entry:', revErr);
-                                this.showAppAlert('Gagal membuat jurnal pembalik (reversal) di database: ' + (revErr.message || revErr) + '. Pembatalan transaksi dibatalkan.');
-                                return;
-                            }
-                        }
-
-                        // 3. UPDATE TRANSACTION STATUS DI SUPABASE LIVE
-                        if (Number.isSafeInteger(trxId) && trxId > 0) {
-                            const { error: updateTrxErr } = await supabaseClient
-                                .from('transactions')
-                                .update({
-                                    status: 'VOID',
-                                    voided_at: new Date().toISOString(),
-                                    voided_by: this.currentUser.id
-                                })
-                                .eq('id', trxId);
-
-                            if (updateTrxErr) {
-                                console.error('Error updating transaction status to VOID in Supabase:', updateTrxErr);
-                                this.showAppAlert('Gagal meng-update status VOID transaksi di database: ' + (updateTrxErr.message || updateTrxErr) + '. Pembatalan dibatalkan.');
-                                return;
+                                if (updateTrxErr) {
+                                    console.error('Error updating transaction status to VOID in Supabase:', updateTrxErr);
+                                    this.showAppAlert('Gagal meng-update status VOID transaksi di database: ' + (updateTrxErr.message || updateTrxErr) + '. Pembatalan dibatalkan.');
+                                    return;
+                                }
                             }
                         }
 
