@@ -841,11 +841,11 @@ BEGIN
         RAISE EXCEPTION 'DUPLICATE_EQUITY_NO: Nomor transaksi ekuitas % sudah pernah dicatat', p_equity_no;
     END IF;
 
-    -- Normalize frontend type identifiers (CAPITAL_IN / DRAWING_OUT) to DB canonical values (MODAL / PRIVE)
+    -- Normalize frontend type identifiers to DB canonical values (CAPITAL_IN / DRAWING_OUT)
     IF p_transaction_type IN ('MODAL', 'CAPITAL_IN') THEN
-        v_normalized_type := 'MODAL';
+        v_normalized_type := 'CAPITAL_IN';
     ELSIF p_transaction_type IN ('PRIVE', 'DRAWING_OUT') THEN
-        v_normalized_type := 'PRIVE';
+        v_normalized_type := 'DRAWING_OUT';
     ELSE
         RAISE EXCEPTION 'INVALID_TYPE: Tipe transaksi harus MODAL/CAPITAL_IN atau PRIVE/DRAWING_OUT';
     END IF;
@@ -881,7 +881,7 @@ BEGIN
     ) RETURNING id INTO v_eq_id;
 
     -- [5] Post Double-Entry Journal Atomically (using normalized type)
-    IF v_normalized_type = 'MODAL' THEN
+    IF v_normalized_type = 'CAPITAL_IN' THEN
         -- Modal Setor: Kas Bertambah (Debit), Modal Bertambah (Credit)
         v_journal_lines := jsonb_build_array(
             jsonb_build_object(
