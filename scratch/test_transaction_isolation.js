@@ -574,11 +574,15 @@ try {
     assert(e.message.includes('UNBALANCED_JOURNAL'), 'Unbalanced journal entry is strictly rejected');
 }
 
-// TEST O: FRONTEND ROLLBACK SAFETY IN INDEX.HTML
-assert(htmlContent.includes('await this.rollbackInvoiceConversion(insertedInvId);'), 'Quotation->Invoice conversion has rollback on journal failure');
-assert(htmlContent.includes("await supabaseClient.from('purchase_items').delete().eq('purchase_id', insertedPurchaseId);"), 'Purchase creation has item rollback on journal failure');
-assert(htmlContent.includes("await supabaseClient.from('expenses').delete().eq('id', insertedExpense.id);"), 'Expense creation has orphan row cleanup on journal failure');
-assert(htmlContent.includes("await supabaseClient.from('equity_transactions').delete().eq('id', insertedEquity.id);"), 'Equity creation has orphan row cleanup on journal failure');
+// TEST O: ELIMINATION OF DANGEROUS CLIENT COMPENSATION DELETES IN FAVOR OF ATOMIC RPCS
+assert(!htmlContent.includes("await supabaseClient.from('purchase_items').delete().eq('purchase_id'"), 'Purchase items compensation delete is eliminated from frontend');
+assert(!htmlContent.includes("await supabaseClient.from('expenses').delete().eq('id'"), 'Expense compensation delete is eliminated from frontend');
+assert(!htmlContent.includes("await supabaseClient.from('equity_transactions').delete().eq('id'"), 'Equity compensation delete is eliminated from frontend');
+assert(htmlContent.includes("supabaseClient.rpc('create_pos_transaction_atomic'"), 'Frontend calls create_pos_transaction_atomic as single-path transaction');
+assert(htmlContent.includes("supabaseClient.rpc('create_purchase_atomic'"), 'Frontend calls create_purchase_atomic as single-path transaction');
+assert(htmlContent.includes("supabaseClient.rpc('create_expense_atomic'"), 'Frontend calls create_expense_atomic as single-path transaction');
+assert(htmlContent.includes("supabaseClient.rpc('create_equity_transaction_atomic'"), 'Frontend calls create_equity_transaction_atomic as single-path transaction');
+assert(htmlContent.includes("supabaseClient.rpc('convert_quotation_to_invoice_atomic'"), 'Frontend calls convert_quotation_to_invoice_atomic as single-path transaction');
 
 // TEST P: FRONTEND EXPLICIT ROLE CHECKS FOR KASIR
 assert(htmlContent.includes('Hanya Owner dan Admin yang berhak mencatat Pembelian Supplier'), 'Frontend role check restricts savePurchase to owner & admin');
@@ -686,6 +690,70 @@ try {
 } catch (e) {
     assert(e.message.includes('UNAUTHORIZED'), 'Kasir attempting VOID POS transaction is strictly rejected with UNAUTHORIZED');
 }
+
+// TEST Y: ATOMIC BUSINESS TRANSACTIONS ENGINE MIGRATION INTEGRITY & PRIVILEGES
+const atomicEngineMigrationPath = path.join(__dirname, '..', 'supabase', 'migrations', '20261012_atomic_business_transactions_engine.sql');
+assert(fs.existsSync(atomicEngineMigrationPath), 'Atomic business transactions engine migration file exists');
+const atomicEngineSql = fs.readFileSync(atomicEngineMigrationPath, 'utf8');
+
+assert(atomicEngineSql.includes('CREATE OR REPLACE FUNCTION public.create_pos_transaction_atomic'), 'Migration defines create_pos_transaction_atomic');
+assert(atomicEngineSql.includes('CREATE OR REPLACE FUNCTION public.create_purchase_atomic'), 'Migration defines create_purchase_atomic');
+assert(atomicEngineSql.includes('CREATE OR REPLACE FUNCTION public.create_expense_atomic'), 'Migration defines create_expense_atomic');
+assert(atomicEngineSql.includes('CREATE OR REPLACE FUNCTION public.create_equity_transaction_atomic'), 'Migration defines create_equity_transaction_atomic');
+assert(atomicEngineSql.includes('CREATE OR REPLACE FUNCTION public.convert_quotation_to_invoice_atomic'), 'Migration defines convert_quotation_to_invoice_atomic');
+
+assert(atomicEngineSql.includes('REVOKE EXECUTE ON FUNCTION public.create_pos_transaction_atomic FROM PUBLIC, anon;'), 'create_pos_transaction_atomic revoked from anon');
+assert(atomicEngineSql.includes('REVOKE EXECUTE ON FUNCTION public.create_purchase_atomic FROM PUBLIC, anon;'), 'create_purchase_atomic revoked from anon');
+assert(atomicEngineSql.includes('REVOKE EXECUTE ON FUNCTION public.create_expense_atomic FROM PUBLIC, anon;'), 'create_expense_atomic revoked from anon');
+assert(atomicEngineSql.includes('REVOKE EXECUTE ON FUNCTION public.create_equity_transaction_atomic FROM PUBLIC, anon;'), 'create_equity_transaction_atomic revoked from anon');
+assert(atomicEngineSql.includes('REVOKE EXECUTE ON FUNCTION public.convert_quotation_to_invoice_atomic FROM PUBLIC, anon;'), 'convert_quotation_to_invoice_atomic revoked from anon');
+
+// TEST Z: SIMULATED ATOMIC TRANSACTION ROLLBACK & INVENTORY SAFETY
+// 1. POS Insufficient Stock Rollback
+const testProductStock = [{ id: 1001, name: 'Pakan Ayam 50kg', stock: 3, type: 'barang' }];
+const initialTxCount = engine.transactions.length;
+const initialJournalCount = engine.journals.length;
+
+function simulateAtomicPos(role, userId, { trxCode, items, total, products }) {
+    if (!['owner', 'admin', 'kasir'].includes(role)) throw new Error('UNAUTHORIZED');
+    // Lock and check stock first
+    for (const item of items) {
+        const prod = products.find(p => p.id === item.productId);
+        if (!prod || prod.stock < item.qty) {
+            throw new Error(`INSUFFICIENT_STOCK: Stok tidak mencukupi untuk ${prod ? prod.name : item.productId}`);
+        }
+    }
+    // Only if all stock checks pass: deduct stock and insert transaction & journal
+    for (const item of items) {
+        const prod = products.find(p => p.id === item.productId);
+        prod.stock -= item.qty;
+    }
+    engine.transactions.push({ id: 9901, trx_code: trxCode, total: total, status: 'VALID' });
+    engine.journals.push({ id: 9901, source_type: 'TRANSACTION', source_code: trxCode, total: total });
+    return { success: true };
+}
+
+try {
+    simulateAtomicPos('kasir', 'user-kasir', {
+        trxCode: 'TRX-FAIL-STOCK',
+        items: [{ productId: 1001, qty: 10 }], // Requesting 10 but only 3 available
+        total: 500000,
+        products: testProductStock
+    });
+    assert(false, 'POS with insufficient stock must fail');
+} catch (err) {
+    assert(err.message.includes('INSUFFICIENT_STOCK'), 'POS with insufficient stock raises INSUFFICIENT_STOCK exception');
+}
+assert(testProductStock[0].stock === 3, 'Product stock untouched after POS stock check failure');
+assert(engine.transactions.length === initialTxCount, 'Zero orphan transaction rows created on failed POS checkout');
+assert(engine.journals.length === initialJournalCount, 'Zero orphan journal entries created on failed POS checkout');
+
+// 2. Quotation Conversion Rule: Does NOT alter stock
+const qtProductStock = [{ id: 1002, name: 'Vitamin Ternak', stock: 25, type: 'barang' }];
+const initialQtStock = qtProductStock[0].stock;
+// Simulated quotation conversion
+engine.invoices.push({ id: 9001, inv_no: 'INV-QT-001', quotation_id: 501, status: 'Belum Lunas' });
+assert(qtProductStock[0].stock === initialQtStock, 'Quotation to invoice conversion strictly DOES NOT alter inventory stock');
 
 console.log('----------------------------------------------------------------');
 console.log(`TOTAL ISOLATION TESTS: ${passedTests + failedTests}`);

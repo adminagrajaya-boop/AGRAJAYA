@@ -5121,8 +5121,7 @@
                         return;
                     }
 
-                    // 7. PROSES MUTASI DATA (HANYA SETELAH SELURUH VALIDASI PAS)
-                    // 7.1 VALIDASI AUTH SESSION UNTUK PERSISTENCE OPERASIONAL
+                    // 7. PROSES MUTASI DATA ATOMIK (1 DATABASE TRANSACTION)
                     if (!supabaseClient || !this.isAuthenticated || !this.currentUser || !this.currentUser.id) {
                         this.showAppAlert('Sesi pengguna tidak siap atau belum terautentikasi. Transaksi dibatalkan.');
                         return;
@@ -5133,66 +5132,9 @@
                     const dateStr = this.getLocalDateString();
                     const partyNameStr = this.customerName ? `${this.customerName} (${this.customerFarm || 'Kandang'})` : 'Pelanggan Umum';
 
-                    // 7.2 PREVENT DUPLICATE RECORD (Cek kode transaksi di Supabase)
-                    try {
-                        const { data: existingTrx, error: checkError } = await supabaseClient
-                            .from('transactions')
-                            .select('id')
-                            .eq('trx_code', code)
-                            .maybeSingle();
-
-                        if (checkError) throw checkError;
-                        if (existingTrx) {
-                            this.showAppAlert('Kode transaksi ' + code + ' sudah terdaftar di database. Silakan coba kembali.');
-                            return;
-                        }
-                    } catch (chkErr) {
-                        console.error('Cek duplicate transaction error:', chkErr);
-                        this.showAppAlert('Gagal memverifikasi status transaksi di database: ' + (chkErr.message || chkErr) + '. Transaksi dibatalkan.');
-                        return;
-                    }
-
-                    // 7.3 PERSIST STOCK CHANGES TO SUPABASE FIRST
-                    const stockChanges = cartItemsSnapshot
-                        .map(cartItem => {
-                            const prod = this.products.find(p => Number(p.id) === Number(cartItem.id));
-                            if (!prod || prod.type !== 'barang') return null;
-                            const oldStock = Number(prod.stock);
-                            const qty = Number(cartItem.qty);
-                            const newStock = oldStock - qty;
-                            if (!Number.isFinite(oldStock) || oldStock < 0 || !Number.isFinite(qty) || qty <= 0 ||
-                                !Number.isFinite(newStock) || newStock < 0) return null;
-                            return { product: prod, oldStock, oldCostPrice: Number(prod.costPrice || 0), qty: -qty, newStock };
-                        })
-                        .filter(Boolean);
-
-                    if (stockChanges.length > 0) {
-                        const persisted = await this.persistStockChangesToSupabase(stockChanges, 'OUT', code, 'Penjualan');
-                        if (!persisted) return; // Abort before inserting transaction row if stock update fails
-                    }
-
-                    // 7.4 RESOLVE COA & PAYMENT ACCOUNTS FOR AUTOMATIC JOURNAL POSTING
-                    if (!Array.isArray(this.accountingCOA) || this.accountingCOA.length === 0) {
-                        await this.fetchCOA();
-                    }
-                    if (!Array.isArray(this.accountingPaymentAccounts) || this.accountingPaymentAccounts.length === 0) {
-                        await this.fetchPaymentAccounts();
-                    }
-
-                    const revenueCoa = (this.accountingCOA || []).find(c => c.code === '4-1110');
-                    if (!revenueCoa || !revenueCoa.id) {
-                        this.showAppAlert('Bagan akun Pendapatan Penjualan Barang (4-1110) tidak ditemukan di database. Transaksi dibatalkan.');
-                        return;
-                    }
-                    const revenueCoaId = Number(revenueCoa.id);
-
                     let posPaymentAccountId = null;
-                    let paymentCoaId = null;
-                    let piutangCoaId = null;
-                    let kasCoaId = null;
-                    let paymentAccObj = null;
-
                     if (this.paymentMethod === 'Tunai' || this.paymentMethod === 'Transfer' || this.paymentMethod === 'QRIS') {
+                        let paymentAccObj = null;
                         if (this.paymentMethod === 'Tunai') {
                             paymentAccObj = (this.accountingPaymentAccounts || []).find(a => a.type === 'CASH' || a.name === 'Kas Tunai Kasir');
                         } else if (this.paymentMethod === 'Transfer') {
@@ -5205,170 +5147,45 @@
                             this.showAppAlert('Akun pembayaran kas/bank untuk metode ' + this.paymentMethod + ' tidak terdaftar di sistem. Transaksi dibatalkan.');
                             return;
                         }
-
-                        paymentCoaId = Number(paymentAccObj.chart_of_account_id || (paymentAccObj.chart_of_accounts ? paymentAccObj.chart_of_accounts.id : null));
-                        if (!paymentCoaId) {
-                            this.showAppAlert('Akun kas / bank ' + paymentAccObj.name + ' tidak memiliki relasi COA yang valid. Transaksi dibatalkan.');
-                            return;
-                        }
-
                         posPaymentAccountId = Number(paymentAccObj.id);
                     } else if (this.paymentMethod === 'Kredit') {
-                        const piutangCoa = (this.accountingCOA || []).find(c => c.code === '1-1110');
-                        if (!piutangCoa || !piutangCoa.id) {
-                            this.showAppAlert('Bagan akun Piutang Usaha (1-1110) tidak ditemukan di database. Transaksi dibatalkan.');
-                            return;
-                        }
-                        piutangCoaId = Number(piutangCoa.id);
-
-                        const dp = Math.min(grandTotal, Math.max(0, Number(this.dpAmount || 0)));
-                        if (dp > 0) {
+                        if (Number(this.dpAmount || 0) > 0) {
                             const kasPayAcc = (this.accountingPaymentAccounts || []).find(a => a.type === 'CASH' || a.name === 'Kas Tunai Kasir');
-                            kasCoaId = kasPayAcc ? Number(kasPayAcc.chart_of_account_id || (kasPayAcc.chart_of_accounts ? kasPayAcc.chart_of_accounts.id : null)) : null;
-                            if (!kasPayAcc || !kasCoaId) {
-                                this.showAppAlert('Akun Kas Tunai (1-1010) untuk penerimaan DP piutang tidak ditemukan. Transaksi dibatalkan.');
-                                return;
-                            }
+                            if (kasPayAcc) posPaymentAccountId = Number(kasPayAcc.id);
                         }
-                    } else {
-                        this.showAppAlert('Metode pembayaran "' + this.paymentMethod + '" tidak dapat dipetakan ke sistem akuntansi. Transaksi dibatalkan.');
-                        return;
                     }
 
-                    // 7.5 PERSIST POS TRANSACTION & POST AUTOMATIC DOUBLE-ENTRY JOURNAL
-                    let insertedTrxId = null;
-                    try {
-                        const trxPayload = {
-                            trx_code: code,
-                            transaction_type: 'Jual',
-                            party_name: partyNameStr,
-                            transaction_date: dateStr,
-                            status: 'VALID',
-                            total: grandTotal,
-                            profit: grossProfit,
-                            payment_method: this.paymentMethod,
-                            payment_account_id: posPaymentAccountId,
-                            items: cartItemsSnapshot,
-                            created_by: this.currentUser.id
-                        };
-
-                        const { data: insertedTrx, error: insertTrxError } = await supabaseClient
-                            .from('transactions')
-                            .insert(trxPayload)
-                            .select('id, trx_code')
-                            .single();
-
-                        if (insertTrxError) throw insertTrxError;
-                        if (!insertedTrx || !insertedTrx.id) {
-                            throw new Error('Supabase tidak mengembalikan ID transaksi yang valid.');
-                        }
-                        insertedTrxId = insertedTrx.id;
-
-                        // POST AUTOMATIC JOURNAL VIA RPC
-                        let journalLines = [];
-                        if (this.paymentMethod === 'Tunai' || this.paymentMethod === 'Transfer' || this.paymentMethod === 'QRIS') {
-                            journalLines = [
-                                {
-                                    chart_of_account_id: paymentCoaId,
-                                    debit: grandTotal,
-                                    credit: 0,
-                                    description: 'Penerimaan kas/bank POS ' + code + ' via ' + (paymentAccObj ? paymentAccObj.name : this.paymentMethod)
-                                },
-                                {
-                                    chart_of_account_id: revenueCoaId,
-                                    debit: 0,
-                                    credit: grandTotal,
-                                    description: 'Penjualan barang POS ' + code + ' (' + partyNameStr + ')'
-                                }
-                            ];
-                        } else if (this.paymentMethod === 'Kredit') {
-                            const dp = Math.min(grandTotal, Math.max(0, Number(this.dpAmount || 0)));
-                            const remainingPiutang = grandTotal - dp;
-                            if (dp > 0) {
-                                journalLines.push({
-                                    chart_of_account_id: kasCoaId,
-                                    debit: dp,
-                                    credit: 0,
-                                    description: 'Penerimaan DP tunai POS ' + code + ' (' + partyNameStr + ')'
-                                });
-                            }
-                            if (remainingPiutang > 0) {
-                                journalLines.push({
-                                    chart_of_account_id: piutangCoaId,
-                                    debit: remainingPiutang,
-                                    credit: 0,
-                                    description: 'Piutang penjualan POS ' + code + ' (' + partyNameStr + ')'
-                                });
-                            }
-                            journalLines.push({
-                                chart_of_account_id: revenueCoaId,
-                                debit: 0,
-                                credit: grandTotal,
-                                description: 'Penjualan barang POS ' + code + ' (' + partyNameStr + ')'
-                            });
-                        }
-
-                        const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry_secure', {
-                            p_journal_date: dateStr,
-                            p_source_type: 'TRANSACTION',
-                            p_source_id: insertedTrx.id,
-                            p_source_code: code,
-                            p_description: 'Transaksi Penjualan POS ' + code + ' - ' + partyNameStr,
-                            p_lines: journalLines
-                        });
-
-                        if (journalError) {
-                            console.error('Error posting journal for POS transaction:', journalError);
-                            throw new Error('Posting jurnal otomatis transaksi POS ' + code + ' ke General Ledger gagal: ' + (journalError.message || journalError));
-                        }
-                    } catch (dbErr) {
-                        console.error('Error persisting transaction or posting journal to Supabase:', dbErr);
-                        // Clean up operational transaction orphan if insert succeeded but journal posting failed
-                        if (insertedTrxId) {
-                            try {
-                                const { error: delErr } = await supabaseClient
-                                    .from('transactions')
-                                    .delete()
-                                    .eq('id', insertedTrxId);
-                                if (delErr) {
-                                    console.warn('Could not delete orphaned transaction row, updating status to VOID:', delErr);
-                                    await supabaseClient
-                                        .from('transactions')
-                                        .update({ status: 'VOID' })
-                                        .eq('id', insertedTrxId);
-                                }
-                            } catch (cleanupErr) {
-                                console.error('Error cleaning up orphaned transaction:', cleanupErr);
-                            }
-                        }
-
-                        // Rollback stock updates if transaction or journal insert failed
-                        if (stockChanges.length > 0) {
-                            for (let i = stockChanges.length - 1; i >= 0; i--) {
-                                const sc = stockChanges[i];
-                                await supabaseClient
-                                    .from('products')
-                                    .update({ stock: sc.oldStock })
-                                    .eq('id', sc.product.id);
-                            }
-                        }
-                        this.showAppAlert('Gagal menyimpan transaksi / posting jurnal ke database: ' + (dbErr.message || dbErr) + '. Transaksi dibatalkan dan keranjang tidak dihapus.');
-                        return;
-                    }
-
-                    stockChanges.forEach(change => {
-                        change.product.stock = change.newStock;
-                        this.stockLogs.unshift({
-                            id: Date.now() + Math.random(),
-                            date: dateStr,
-                            productName: change.product.name,
-                            change: change.qty,
-                            finalStock: change.newStock,
-                            note: `Penjualan ${code}`
-                        });
+                    // EKSEKUSI WAJIB RPC ATOMIK SERVER-SIDE (Dokumen, Stok, Stock Logs, Piutang, Jurnal)
+                    const { data: atomicTrx, error: trxErr } = await supabaseClient.rpc('create_pos_transaction_atomic', {
+                        p_trx_code: code,
+                        p_party_name: partyNameStr,
+                        p_transaction_date: dateStr,
+                        p_total: grandTotal,
+                        p_profit: grossProfit,
+                        p_payment_method: this.paymentMethod,
+                        p_payment_account_id: posPaymentAccountId,
+                        p_items: cartItemsSnapshot,
+                        p_dp_amount: Number(this.dpAmount || 0),
+                        p_due_date: (this.paymentMethod === 'Kredit' && this.dueDate) ? this.dueDate : null,
+                        p_customer_name: this.customerName || 'Pelanggan Umum',
+                        p_customer_farm: this.customerFarm || '-',
+                        p_inv_no: invNo
                     });
 
-                    // 7.5 UPDATE LOCAL STATE (TERMASUK LOCALSTORAGE COMPATIBILITY)
+                    if (trxErr || !atomicTrx || !atomicTrx.success) {
+                        const errMsg = (trxErr && trxErr.message) ? trxErr.message : 'Pemrosesan transaksi POS gagal di server.';
+                        console.error('create_pos_transaction_atomic error:', trxErr);
+                        this.showAppAlert('Gagal memproses transaksi POS: ' + errMsg);
+                        return;
+                    }
+
+                    const insertedTrxId = atomicTrx.transaction_id;
+
+                    // Update Local State setelah server mengonfirmasi transaksi atomik sukses
+                    const paid = this.paymentMethod === 'Kredit' ? Number(this.dpAmount || 0) : grandTotal;
+                    const remaining = Math.max(0, grandTotal - paid);
+                    const invStatus = remaining <= 0 ? 'Lunas' : (paid > 0 ? 'Sebagian' : 'Belum Bayar');
+
                     const trx = {
                         id: insertedTrxId || Date.now(),
                         supabaseId: insertedTrxId,
@@ -5385,14 +5202,9 @@
 
                     this.transactionHistory.unshift(trx);
 
-                    // Buat Invoice
-                    const paid = this.paymentMethod === 'Kredit' ? Number(this.dpAmount || 0) : grandTotal;
-                    const remaining = Math.max(0, grandTotal - paid);
-                    const invStatus = remaining <= 0 ? 'Lunas' : (paid > 0 ? 'Sebagian' : 'Belum Bayar');
-
                     this.invoiceList.unshift({
-                        id: Date.now(),
-                        invNo: invNo,
+                        id: atomicTrx.invoice_id || Date.now(),
+                        invNo: atomicTrx.inv_no || invNo,
                         trxCode: code,
                         date: dateStr,
                         dueDate: (this.paymentMethod === 'Kredit' && this.dueDate) ? this.dueDate : '',
@@ -5405,11 +5217,10 @@
                         status: invStatus
                     });
 
-                    // Buat Piutang jika Kredit & masih ada sisa
                     if (this.paymentMethod === 'Kredit' && remaining > 0) {
                         this.piutangList.unshift({
                             id: Date.now(),
-                            invNo: invNo,
+                            invNo: atomicTrx.inv_no || invNo,
                             customerName: this.customerName || 'Pelanggan Kredit',
                             customerFarm: this.customerFarm || '-',
                             dueDate: (this.paymentMethod === 'Kredit' && this.dueDate) ? this.dueDate : '',
@@ -5418,6 +5229,10 @@
                             remaining: remaining
                         });
                     }
+
+                    // Refresh database master data & accounting untuk sinkronisasi state
+                    await this.loadMasterDataFromSupabase();
+                    await this.loadAccountingDataFromSupabase();
 
                     this.activeReceipt = trx;
                     this.showPaymentModal = false;
@@ -6273,277 +6088,64 @@
                     const customerIdNum = Number.isSafeInteger(Number(qt.customerId || qt.customer_id)) ? Number(qt.customerId || qt.customer_id) : null;
                     const projectIdNum = Number.isSafeInteger(Number(qt.projectId || qt.project_id)) ? Number(qt.projectId || qt.project_id) : null;
 
-                    // 5. Cek Duplicate Record di Supabase LIVE (public.invoices)
-                    try {
-                        if (qtIdNum) {
-                            const { data: existingSupabaseInvByQt, error: chkQtErr } = await supabaseClient
-                                .from('invoices')
-                                .select('id, inv_no')
-                                .eq('quotation_id', qtIdNum)
-                                .maybeSingle();
-
-                            if (chkQtErr) throw chkQtErr;
-                            if (existingSupabaseInvByQt) {
-                                this.showAppAlert(`Penawaran ${qt.qtNo} sudah pernah dikonversi menjadi Invoice: ${existingSupabaseInvByQt.inv_no}`);
-                                qt.status = 'Approved';
-                                this.saveDataToStorage();
-                                this.currentTab = 'invoice';
-                                return;
-                            }
-                        }
-
-                        const { data: existingSupabaseInv, error: chkErr } = await supabaseClient
-                            .from('invoices')
-                            .select('id, inv_no')
-                            .eq('inv_no', invNo)
-                            .maybeSingle();
-
-                        if (chkErr) throw chkErr;
-                        if (existingSupabaseInv) {
-                            this.showAppAlert('Nomor invoice ' + invNo + ' sudah terdaftar di database. Silakan coba kembali.');
-                            return;
-                        }
-                    } catch (chkErr) {
-                        console.error('Cek duplicate invoice error:', chkErr);
-                        this.showAppAlert('Gagal memverifikasi data invoice di database: ' + (chkErr.message || chkErr) + '. Konversi dibatalkan.');
+                    if (!supabaseClient || !this.isAuthenticated) {
+                        this.showAppAlert('Koneksi Supabase atau autentikasi tidak aktif. Konversi penawaran harus melalui transaksi database atomik.');
                         return;
                     }
 
-                    // 6. PERSIST INVOICE TO SUPABASE LIVE (public.invoices)
-                    let insertedInvId = null;
-                    try {
-                        const invoicePayload = {
-                            inv_no: invNo,
-                            customer_id: customerIdNum,
-                            customer_name: qt.customerName || 'Pelanggan',
-                            customer_farm: qt.projectName || '-',
-                            due_date: dueDateVal,
-                            invoice_date: dateStr,
-                            status: statusVal,
-                            subtotal: computedGrossTotal,
-                            discount_total: computedDiscountTotal,
-                            total: computedNetTotal,
-                            paid_amount: paidAmtVal,
-                            remaining: remainingVal,
-                            project_id: projectIdNum,
-                            quotation_id: qtIdNum,
-                            transaction_id: null,
-                            created_by: this.currentUser.id
-                        };
-
-                        const { data: insertedInv, error: insertInvErr } = await supabaseClient
-                            .from('invoices')
-                            .insert(invoicePayload)
-                            .select('id, inv_no')
-                            .single();
-
-                        if (insertInvErr) throw insertInvErr;
-                        if (!insertedInv || !insertedInv.id) {
-                            throw new Error('Supabase tidak mengembalikan ID invoice yang valid.');
-                        }
-                        insertedInvId = insertedInv.id;
-                    } catch (dbErr) {
-                        console.error('Error persisting invoice to Supabase:', dbErr);
-                        if (dbErr && (dbErr.code === '23505' || (dbErr.message && (dbErr.message.includes('quotation_id') || dbErr.message.includes('unique'))))) {
-                            this.showAppAlert(`Penawaran ${qt.qtNo || ''} sudah dikonversi menjadi Invoice oleh proses lain. Konversi dibatalkan.`);
-                        } else {
-                            this.showAppAlert('Gagal menyimpan invoice ke database Supabase: ' + (dbErr.message || dbErr) + '. Konversi dibatalkan.');
-                        }
+                    if (!qtIdNum) {
+                        this.showAppAlert('Penawaran belum tersinkronisasi ke database server. Silakan muat ulang data terlebih dahulu.');
                         return;
                     }
 
-                    // 7. PERSIST INVOICE ITEMS TO SUPABASE LIVE (public.invoice_items)
-                    // FIX PERMANEN BUG: JANGAN KIRIM subtotal KARENA subtotal GENERATED ALWAYS AS (qty * price) STORED DI SUPABASE
-                    try {
-                        const itemsPayload = validatedItems.map(item => {
-                            const prod = this.products.find(p => p.id == item.productId);
-                            const costPrice = prod && Number.isFinite(Number(prod.costPrice)) ? Number(prod.costPrice) : 0;
-                            return {
-                                invoice_id: insertedInvId,
-                                product_id: Number.isSafeInteger(Number(item.productId)) ? Number(item.productId) : null,
-                                category: item.category || 'General',
-                                unit: item.unit || 'Unit',
-                                price: item.price,
-                                cost_price: costPrice,
-                                qty: item.qty,
-                                discount_type: item.discountType || 'none',
-                                discount_value: item.discountValue || 0,
-                                discount_amount: item.discountAmount || 0
-                            };
-                        });
-
-                        const { error: itemsInsertErr } = await supabaseClient
-                            .from('invoice_items')
-                            .insert(itemsPayload);
-
-                        if (itemsInsertErr) throw itemsInsertErr;
-                    } catch (itemsErr) {
-                        console.error('Error persisting invoice items to Supabase:', itemsErr);
-                        await this.rollbackInvoiceConversion(insertedInvId);
-                        this.showAppAlert('Gagal menyimpan rincian item invoice ke database Supabase: ' + (itemsErr.message || itemsErr) + '. Konversi dibatalkan.');
-                        return;
-                    }
-
-                    // 8. PERSIST RECEIVABLE TO SUPABASE LIVE (public.receivables) ONLY IF NOT LUNAS & REMAINING > 0
-                    let insertedRecId = null;
-                    if (!isTunaiLunas && remainingVal > 0) {
-                        try {
-                            const recPayload = {
-                                inv_no: invNo,
-                                customer_name: qt.customerName || 'Pelanggan',
-                                due_date: dueDateVal,
-                                status: statusVal,
-                                total: computedNetTotal,
-                                paid: paidAmtVal,
-                                remaining: remainingVal,
-                                invoice_id: insertedInvId
-                            };
-
-                            const { data: insertedRec, error: recInsertErr } = await supabaseClient
-                                .from('receivables')
-                                .insert(recPayload)
-                                .select('id')
-                                .single();
-
-                            if (recInsertErr) throw recInsertErr;
-                            if (insertedRec) insertedRecId = insertedRec.id;
-                        } catch (recErr) {
-                            console.error('Error persisting receivable to Supabase:', recErr);
-                            await this.rollbackInvoiceConversion(insertedInvId);
-                            this.showAppAlert('Gagal menyimpan piutang ke database Supabase: ' + (recErr.message || recErr) + '. Konversi dibatalkan.');
-                            return;
-                        }
-                    }
-
-                    // 9. POST SALES REVENUE JOURNAL TO GENERAL LEDGER VIA RPC post_journal_entry
-                    if (!Array.isArray(this.accountingCOA) || this.accountingCOA.length === 0) {
-                        try {
-                            await this.fetchCOA();
-                        } catch (cErr) {
-                            console.error('Error fetching COA for invoice journal:', cErr);
-                        }
-                    }
-
-                    const piutangCoa = (this.accountingCOA || []).find(c => c.code === '1-1110');
-                    const salesCoa = (this.accountingCOA || []).find(c => c.code === '4-1110');
-                    const serviceCoa = (this.accountingCOA || []).find(c => c.code === '4-1120') || salesCoa;
-
-                    if (!piutangCoa || !piutangCoa.id || !salesCoa || !salesCoa.id) {
-                        await this.rollbackInvoiceConversion(insertedInvId);
-                        this.showAppAlert('Gagal: Bagan akun esensial (1-1110 atau 4-1110) tidak ditemukan di database. Jurnal tidak bisa diposting.');
-                        return;
-                    }
-
-                    let paymentCoaId = null;
+                    let paymentAccountId = null;
                     if (options.paymentAccountId) {
-                        const payAcc = (this.accountingPaymentAccounts || []).find(a => a.id == options.paymentAccountId);
-                        if (payAcc && payAcc.chart_of_accounts) paymentCoaId = Number(payAcc.chart_of_accounts.id);
-                    }
-                    if (!paymentCoaId) {
-                        const fallbackKas = (this.accountingCOA || []).find(c => c.code === '1-1101' || c.type === 'Kas' || c.type === 'Kas/Bank');
-                        if (fallbackKas) paymentCoaId = Number(fallbackKas.id);
+                        paymentAccountId = Number(options.paymentAccountId);
+                    } else if (isTunaiLunas || paidAmtVal > 0) {
+                        const defaultKas = (this.accountingPaymentAccounts || []).find(a => a.type === 'CASH' && a.is_active);
+                        if (defaultKas) paymentAccountId = Number(defaultKas.id);
                     }
 
-                    const journalLines = [];
-                    if (isTunaiLunas) {
-                        if (paymentCoaId) {
-                            journalLines.push({
-                                chart_of_account_id: paymentCoaId,
-                                debit: computedNetTotal,
-                                credit: 0,
-                                description: `Penerimaan Penjualan Cash Invoice ${invNo} (${qt.customerName || 'Pelanggan'})`
-                            });
-                        } else {
-                            await this.rollbackInvoiceConversion(insertedInvId);
-                            this.showAppAlert('Gagal: Bagan akun Kas tidak ditemukan. Jurnal tidak bisa diposting.');
-                            return;
-                        }
-                    } else {
-                        if (paidAmtVal > 0 && paymentCoaId) {
-                            journalLines.push({
-                                chart_of_account_id: paymentCoaId,
-                                debit: paidAmtVal,
-                                credit: 0,
-                                description: `DP Penjualan Invoice ${invNo} (${qt.customerName || 'Pelanggan'})`
-                            });
-                        } else if (paidAmtVal > 0 && !paymentCoaId) {
-                            await this.rollbackInvoiceConversion(insertedInvId);
-                            this.showAppAlert('Gagal: Akun pembayaran untuk DP tidak ditemukan.');
-                            return;
-                        }
-                        if (remainingVal > 0) {
-                            journalLines.push({
-                                chart_of_account_id: Number(piutangCoa.id),
-                                debit: remainingVal,
-                                credit: 0,
-                                description: `Piutang Usaha Invoice ${invNo} (${qt.customerName || 'Pelanggan'})`
-                            });
-                        }
+                    const itemsPayload = validatedItems.map(item => {
+                        const prod = (this.products || []).find(p => p.id == item.productId);
+                        const costPrice = prod && Number.isFinite(Number(prod.costPrice)) ? Number(prod.costPrice) : 0;
+                        return {
+                            productId: Number.isSafeInteger(Number(item.productId)) ? Number(item.productId) : null,
+                            category: item.category || 'General',
+                            unit: item.unit || 'Unit',
+                            price: item.price,
+                            costPrice: costPrice,
+                            qty: item.qty,
+                            discountType: item.discountType || 'none',
+                            discountValue: item.discountValue || 0,
+                            discountAmount: item.discountAmount || 0,
+                            type: item.type || 'barang'
+                        };
+                    });
+
+                    // WAJIB: Panggilan RPC Atomik Server-Side (Invoices, Items, Receivables, Jurnal, Status Quotation)
+                    const { data: atomicInv, error: invErr } = await supabaseClient.rpc('convert_quotation_to_invoice_atomic', {
+                        p_quotation_id: qtIdNum,
+                        p_inv_no: invNo,
+                        p_inv_date: dateStr,
+                        p_due_date: dueDateVal,
+                        p_customer_name: qt.customerName || 'Pelanggan',
+                        p_customer_farm: qt.projectName || '-',
+                        p_is_tunai_lunas: isTunaiLunas,
+                        p_payment_account_id: paymentAccountId,
+                        p_paid_amount: paidAmtVal,
+                        p_items: itemsPayload
+                    });
+
+                    if (invErr || !atomicInv || !atomicInv.success) {
+                        const errMsg = (invErr && invErr.message) ? invErr.message : 'Konversi penawaran gagal di server.';
+                        console.error('convert_quotation_to_invoice_atomic error:', invErr);
+                        this.showAppAlert('Gagal mengonversi penawaran: ' + errMsg);
+                        return;
                     }
 
-                    let barangNetSubtotal = 0;
-                    let jasaNetSubtotal = 0;
-
-                    for (let item of validatedItems) {
-                        const netSub = item.subtotal;
-                        if (item.type === 'jasa') {
-                            jasaNetSubtotal += netSub;
-                        } else {
-                            barangNetSubtotal += netSub;
-                        }
-                    }
-
-                    if (barangNetSubtotal > 0) {
-                        journalLines.push({
-                            chart_of_account_id: Number(salesCoa.id),
-                            debit: 0,
-                            credit: barangNetSubtotal,
-                            description: `Penjualan Barang ${invNo}`
-                        });
-                    }
-
-                    if (jasaNetSubtotal > 0 && serviceCoa && serviceCoa.id) {
-                        journalLines.push({
-                            chart_of_account_id: Number(serviceCoa.id),
-                            debit: 0,
-                            credit: jasaNetSubtotal,
-                            description: `Pendapatan Jasa ${invNo}`
-                        });
-                    }
-
-                    if (journalLines.length >= 2 && computedNetTotal > 0) {
-                        try {
-                            const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry_secure', {
-                                p_journal_date: dateStr,
-                                p_source_type: 'INVOICE',
-                                p_source_id: insertedInvId,
-                                p_source_code: invNo,
-                                p_description: 'Penjualan Invoice ' + invNo + ' (' + (qt.customerName || 'Pelanggan') + ')',
-                                p_lines: journalLines
-                            });
-
-                            if (journalError) throw journalError;
-                        } catch (jErr) {
-                            console.error('Error posting journal entry for invoice:', jErr);
-                            await this.rollbackInvoiceConversion(insertedInvId);
-                            this.showAppAlert('Gagal memposting jurnal penjualan invoice ke akuntansi: ' + (jErr.message || jErr) + '. Konversi dibatalkan.');
-                            return;
-                        }
-                    }
-
-                    // 10. UPDATE REMOTE QUOTATION STATUS TO CONVERTED
-                    if (qtIdNum) {
-                        try {
-                            const { error: qtUpdErr } = await supabaseClient
-                                .from('quotations')
-                                .update({ status: 'Converted', updated_at: new Date().toISOString() })
-                                .eq('id', qtIdNum);
-
-                            if (qtUpdErr) console.error('Gagal memperbarui status penawaran remote:', qtUpdErr);
-                        } catch (qtUpdErr) {
-                            console.error('Error updating remote quotation status:', qtUpdErr);
-                        }
-                    }
+                    const insertedInvId = atomicInv.invoice_id;
+                    const insertedRecId = atomicInv.receivable_id || null;
 
                     // 11. Update Local State
                     const inv = {
@@ -6588,10 +6190,13 @@
 
                     qt.status = 'Converted';
 
-                    if (typeof this.reloadAccountingData === 'function') {
-                        try {
-                            await this.reloadAccountingData();
-                        } catch (e) { }
+                    if (typeof this.loadMasterDataFromSupabase === 'function') {
+                        try { await this.loadMasterDataFromSupabase(); } catch (e) { }
+                    }
+                    if (typeof this.loadAccountingDataFromSupabase === 'function') {
+                        try { await this.loadAccountingDataFromSupabase(); } catch (e) { }
+                    } else if (typeof this.reloadAccountingData === 'function') {
+                        try { await this.reloadAccountingData(); } catch (e) { }
                     }
 
                     this.saveDataToStorage();
@@ -6735,16 +6340,8 @@
                 },
 
                 async rollbackInvoiceConversion(insertedInvId) {
-                    if (!insertedInvId || !supabaseClient) return;
-                    try {
-                        await supabaseClient.from('receivables').delete().eq('invoice_id', insertedInvId);
-                    } catch (e) { }
-                    try {
-                        await supabaseClient.from('invoice_items').delete().eq('invoice_id', insertedInvId);
-                    } catch (e) { }
-                    try {
-                        await supabaseClient.from('invoices').delete().eq('id', insertedInvId);
-                    } catch (e) { }
+                    // Deprecated: Transaksi konversi penawaran ke invoice kini 100% atomik server-side via convert_quotation_to_invoice_atomic
+                    return;
                 },
 
                 // PURCHASE / PO LOGIC
@@ -6880,63 +6477,21 @@
                     const dateStr = this.getLocalDateString();
                     const total = computedTotal;
 
-                    // CEK DUPLICATE RECORD DI SUPABASE LIVE (public.purchases)
-                    try {
-                        const { data: existingPo, error: chkErr } = await supabaseClient
-                            .from('purchases')
-                            .select('id, po_no')
-                            .eq('po_no', poNo)
-                            .maybeSingle();
-
-                        if (chkErr) throw chkErr;
-                        if (existingPo) {
-                            this.showAppAlert('Nomor PO ' + poNo + ' sudah terdaftar di database. Silakan coba kembali.');
-                            return;
-                        }
-                    } catch (chkErr) {
-                        console.error('Cek duplicate purchase error:', chkErr);
-                        this.showAppAlert('Gagal memverifikasi nomor PO di database: ' + (chkErr.message || chkErr) + '. Pembelian dibatalkan.');
+                    if (!supabaseClient || !this.isAuthenticated) {
+                        this.showAppAlert('Koneksi Supabase atau autentikasi tidak aktif. Pembelian supplier harus melalui transaksi database atomik.');
                         return;
                     }
 
                     const purchaseItems = validatedItems.map(vi => ({
-                        productId: vi.product.id,
+                        productId: Number.isSafeInteger(Number(vi.product.id)) ? Number(vi.product.id) : null,
                         name: vi.product.name,
-                        qty: vi.qty,
-                        costPrice: vi.costPrice
-                    }));
-
-                    // Persist stock/cost changes to Supabase before inserting purchase header.
-                    const purchaseStockChanges = validatedItems.map(vi => ({
-                        product: vi.product,
-                        oldStock: Number(vi.product.stock),
-                        oldCostPrice: Number(vi.product.costPrice || 0),
                         qty: Number(vi.qty),
-                        newStock: vi.newStock,
-                        newCostPrice: vi.costPrice > 0 ? vi.costPrice : Number(vi.product.costPrice || 0)
+                        costPrice: Number(vi.costPrice || 0)
                     }));
-
-                    // RESOLVE COA & PAYMENT ACCOUNTS FOR AUTOMATIC PURCHASE JOURNAL
-                    if (!Array.isArray(this.accountingCOA) || this.accountingCOA.length === 0) {
-                        await this.fetchCOA();
-                    }
-                    if (!Array.isArray(this.accountingPaymentAccounts) || this.accountingPaymentAccounts.length === 0) {
-                        await this.fetchPaymentAccounts();
-                    }
-
-                    const inventoryCoa = (this.accountingCOA || []).find(c => c.code === '1-1210');
-                    if (!inventoryCoa || !inventoryCoa.id) {
-                        this.showAppAlert('Bagan akun Persediaan Barang Dagang (1-1210) tidak ditemukan di database. Pembelian dibatalkan.');
-                        return;
-                    }
-                    const inventoryCoaId = Number(inventoryCoa.id);
 
                     let poPaymentAccountId = null;
-                    let paymentCoaId = null;
-                    let payableCoaId = null;
-                    let paymentAccObj = null;
-
                     if (this.newPo.paymentMethod === 'Tunai' || this.newPo.paymentMethod === 'Transfer') {
+                        let paymentAccObj = null;
                         if (this.newPo.paymentMethod === 'Tunai') {
                             paymentAccObj = (this.accountingPaymentAccounts || []).find(a => a.type === 'CASH' || a.name === 'Kas Tunai Kasir');
                         } else if (this.newPo.paymentMethod === 'Transfer') {
@@ -6947,161 +6502,41 @@
                             this.showAppAlert('Akun pembayaran kas/bank untuk metode ' + this.newPo.paymentMethod + ' tidak terdaftar di sistem. Pembelian dibatalkan.');
                             return;
                         }
-
-                        paymentCoaId = Number(paymentAccObj.chart_of_account_id || (paymentAccObj.chart_of_accounts ? paymentAccObj.chart_of_accounts.id : null));
-                        if (!paymentCoaId) {
-                            this.showAppAlert('Akun kas / bank ' + paymentAccObj.name + ' tidak memiliki relasi COA yang valid. Pembelian dibatalkan.');
-                            return;
-                        }
-
                         poPaymentAccountId = Number(paymentAccObj.id);
-                    } else if (this.newPo.paymentMethod === 'Kredit') {
-                        const payableCoa = (this.accountingCOA || []).find(c => c.code === '2-1110');
-                        if (!payableCoa || !payableCoa.id) {
-                            this.showAppAlert('Bagan akun Hutang Usaha Supplier (2-1110) tidak ditemukan di database. Pembelian dibatalkan.');
-                            return;
-                        }
-                        payableCoaId = Number(payableCoa.id);
-                    } else {
-                        this.showAppAlert('Metode pembayaran "' + this.newPo.paymentMethod + '" tidak dapat dipetakan ke sistem akuntansi. Pembelian dibatalkan.');
+                    }
+
+                    // WAJIB: Panggilan RPC Atomik Server-Side (Stok, Stock Logs, Purchases, Items, Payables, Jurnal)
+                    const { data: atomicPo, error: poErr } = await supabaseClient.rpc('create_purchase_atomic', {
+                        p_po_no: poNo,
+                        p_supplier_name: this.newPo.supplierName,
+                        p_purchase_date: dateStr,
+                        p_payment_method: this.newPo.paymentMethod,
+                        p_payment_account_id: poPaymentAccountId,
+                        p_total: total,
+                        p_items: purchaseItems
+                    });
+
+                    if (poErr || !atomicPo || !atomicPo.success) {
+                        const errMsg = (poErr && poErr.message) ? poErr.message : 'Pencatatan pembelian PO gagal di server.';
+                        console.error('create_purchase_atomic error:', poErr);
+                        this.showAppAlert('Gagal menyimpan data pembelian PO: ' + errMsg);
                         return;
                     }
 
-                    const persistedPurchaseStock = await this.persistStockChangesToSupabase(
-                        purchaseStockChanges,
-                        'PURCHASE',
-                        poNo,
-                        'Pembelian PO'
-                    );
-                    if (!persistedPurchaseStock) return;
-
+                    const insertedPurchaseId = atomicPo.purchase_id;
                     const remaining = this.newPo.paymentMethod === 'Kredit' ? total : 0;
                     const paid = total - remaining;
 
-                    // PERSIST PURCHASE HEADER, ITEMS & POST AUTOMATIC JOURNAL TO SUPABASE LIVE
-                    let insertedPurchaseId = null;
-                    try {
-                        const purchasePayload = {
-                            po_no: poNo,
-                            supplier_id: null,
-                            supplier_name: this.newPo.supplierName,
-                            purchase_date: dateStr,
-                            total: total,
-                            paid_amount: paid,
-                            remaining: remaining,
-                            payment_method: this.newPo.paymentMethod,
-                            payment_account_id: poPaymentAccountId,
-                            created_by: this.currentUser.id
-                        };
-
-                        const { data: insertedPo, error: insertPoErr } = await supabaseClient
-                            .from('purchases')
-                            .insert(purchasePayload)
-                            .select('id, po_no')
-                            .single();
-
-                        if (insertPoErr) throw insertPoErr;
-                        if (!insertedPo || !insertedPo.id) {
-                            throw new Error('Supabase tidak mengembalikan ID pembelian yang valid.');
-                        }
-                        insertedPurchaseId = insertedPo.id;
-
-                        // INSERT PURCHASE ITEMS
-                        const poItemsPayload = validatedItems.map(vi => ({
-                            purchase_id: insertedPurchaseId,
-                            product_id: Number.isSafeInteger(Number(vi.product.id)) ? Number(vi.product.id) : null,
-                            cost_price: vi.costPrice,
-                            qty: vi.qty
-                        }));
-
-                        const { error: itemsInsertErr } = await supabaseClient
-                            .from('purchase_items')
-                            .insert(poItemsPayload);
-
-                        if (itemsInsertErr) throw itemsInsertErr;
-
-                        // POST AUTOMATIC JOURNAL VIA RPC
-                        let journalLines = [];
-                        if (this.newPo.paymentMethod === 'Tunai' || this.newPo.paymentMethod === 'Transfer') {
-                            journalLines = [
-                                {
-                                    chart_of_account_id: inventoryCoaId,
-                                    debit: total,
-                                    credit: 0,
-                                    description: 'Pembelian persediaan barang PO ' + poNo + ' (' + this.newPo.supplierName + ')'
-                                },
-                                {
-                                    chart_of_account_id: paymentCoaId,
-                                    debit: 0,
-                                    credit: total,
-                                    description: 'Pembayaran kas/bank PO ' + poNo + ' via ' + (paymentAccObj ? paymentAccObj.name : this.newPo.paymentMethod)
-                                }
-                            ];
-                        } else if (this.newPo.paymentMethod === 'Kredit') {
-                            journalLines = [
-                                {
-                                    chart_of_account_id: inventoryCoaId,
-                                    debit: total,
-                                    credit: 0,
-                                    description: 'Pembelian persediaan barang PO ' + poNo + ' (' + this.newPo.supplierName + ')'
-                                },
-                                {
-                                    chart_of_account_id: payableCoaId,
-                                    debit: 0,
-                                    credit: total,
-                                    description: 'Hutang pembelian tempo PO ' + poNo + ' (' + this.newPo.supplierName + ')'
-                                }
-                            ];
-                        }
-
-                        const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry_secure', {
-                            p_journal_date: dateStr,
-                            p_source_type: 'PURCHASE',
-                            p_source_id: insertedPurchaseId,
-                            p_source_code: poNo,
-                            p_description: 'Pembelian PO ' + poNo + ' (' + this.newPo.supplierName + ')',
-                            p_lines: journalLines
-                        });
-
-                        if (journalError) {
-                            console.error('Error posting journal for purchase:', journalError);
-                            throw new Error('Posting jurnal otomatis pembelian PO ' + poNo + ' ke General Ledger gagal: ' + (journalError.message || journalError));
-                        }
-                    } catch (dbErr) {
-                        console.error('Error persisting purchase or posting journal to Supabase:', dbErr);
-                        // Cleanup purchase header & items if inserted before error occurred
-                        if (insertedPurchaseId) {
-                            try {
-                                await supabaseClient.from('purchase_items').delete().eq('purchase_id', insertedPurchaseId);
-                                await supabaseClient.from('purchases').delete().eq('id', insertedPurchaseId);
-                            } catch (cleanErr) {
-                                console.error('Purchase cleanup error:', cleanErr);
-                            }
-                        }
-                        // Rollback stock and cost price
-                        if (purchaseStockChanges.length > 0) {
-                            for (let i = purchaseStockChanges.length - 1; i >= 0; i--) {
-                                const sc = purchaseStockChanges[i];
-                                await supabaseClient
-                                    .from('products')
-                                    .update({ stock: sc.oldStock, cost_price: sc.oldCostPrice })
-                                    .eq('id', sc.product.id);
-                            }
-                        }
-                        this.showAppAlert('Gagal menyimpan data pembelian / posting jurnal ke database: ' + (dbErr.message || dbErr) + '. Pembelian dibatalkan.');
-                        return;
-                    }
-
-                    // UPDATE LOCAL STATE ONLY AFTER SUPABASE PERSISTENCE SUCCEEDS
-                    purchaseStockChanges.forEach(change => {
-                        change.product.stock = change.newStock;
-                        change.product.costPrice = change.newCostPrice;
+                    // Update Local State setelah server mengonfirmasi transaksi atomik sukses
+                    validatedItems.forEach(vi => {
+                        vi.product.stock = vi.newStock;
+                        if (vi.costPrice > 0) vi.product.costPrice = vi.costPrice;
                         this.stockLogs.unshift({
                             id: Date.now() + Math.random(),
                             date: dateStr,
-                            productName: change.product.name,
-                            change: change.qty,
-                            finalStock: change.newStock,
+                            productName: vi.product.name,
+                            change: vi.qty,
+                            finalStock: vi.newStock,
                             note: `Pembelian PO ${poNo}`
                         });
                     });
@@ -7144,7 +6579,16 @@
                     });
 
                     this.saveDataToStorage();
+
+                    if (typeof this.loadMasterDataFromSupabase === 'function') {
+                        try { await this.loadMasterDataFromSupabase(); } catch (e) { }
+                    }
+                    if (typeof this.loadAccountingDataFromSupabase === 'function') {
+                        try { await this.loadAccountingDataFromSupabase(); } catch (e) { }
+                    }
+
                     this.showAddPurchaseModal = false;
+                    this.showAppAlert(`Pembelian PO ${poNo} berhasil dicatat secara atomik ke database.`);
                 } finally {
                     this.isSavingPurchase = false;
                 }
@@ -9642,65 +9086,26 @@
 
                     this.isSavingExpense = true;
                     try {
-                        // 2. Insert expense record into Supabase
-                        const { data: insertedExpense, error: expError } = await supabaseClient
-                            .from('expenses')
-                            .insert({
-                                expense_no: expenseNo,
-                                expense_date: date,
-                                chart_of_account_id: coaId,
-                                payment_account_id: payAccId,
-                                amount: amount,
-                                payee: payee,
-                                project_id: projectId,
-                                note: note,
-                                status: 'VALID',
-                                created_by: this.currentUser.id
-                            })
-                            .select('id, expense_no')
-                            .single();
-
-                        if (expError) throw expError;
-                        if (!insertedExpense || !insertedExpense.id) {
-                            throw new Error('Gagal mendapatkan ID beban dari database.');
-                        }
-
-                        // 3. Post Automatic Double-Entry Journal via Database RPC
-                        const journalLines = [
-                            {
-                                chart_of_account_id: coaId,
-                                debit: amount,
-                                credit: 0,
-                                description: 'Beban ' + payee + ': ' + note
-                            },
-                            {
-                                chart_of_account_id: paymentCoaId,
-                                debit: 0,
-                                credit: amount,
-                                description: 'Pembayaran ' + expenseNo + ' via ' + (paymentAcc.name || 'Kas/Bank')
-                            }
-                        ];
-
-                        const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry_secure', {
-                            p_journal_date: date,
-                            p_source_type: 'EXPENSE',
-                            p_source_id: insertedExpense.id,
-                            p_source_code: expenseNo,
-                            p_description: 'Pengeluaran Beban ' + expenseNo + ' - ' + payee + ' (' + expenseCoaName + ')',
-                            p_lines: journalLines
+                        // WAJIB: Panggilan RPC Atomik Server-Side (Expenses & Jurnal dalam 1 Transaksi Database)
+                        const { data: atomicExp, error: expErr } = await supabaseClient.rpc('create_expense_atomic', {
+                            p_expense_no: expenseNo,
+                            p_expense_date: date,
+                            p_chart_of_account_id: coaId,
+                            p_payment_account_id: payAccId,
+                            p_amount: amount,
+                            p_payee: payee,
+                            p_project_id: projectId,
+                            p_note: note
                         });
 
-                        if (journalError) {
-                            console.error('Error posting journal for expense:', journalError);
-                            try {
-                                await supabaseClient.from('expenses').delete().eq('id', insertedExpense.id);
-                            } catch (cleanExpErr) {
-                                console.error('Error cleaning up orphaned expense row:', cleanExpErr);
-                            }
-                            throw new Error('Posting jurnal otomatis beban operasional ' + expenseNo + ' ke General Ledger gagal: ' + (journalError.message || journalError));
+                        if (expErr || !atomicExp || !atomicExp.success) {
+                            const errMsg = (expErr && expErr.message) ? expErr.message : 'Pencatatan beban operasional gagal di server.';
+                            console.error('create_expense_atomic error:', expErr);
+                            this.showAppAlert('Gagal menyimpan beban operasional: ' + errMsg);
+                            return;
                         }
 
-                        const jrnNo = journalData?.journal_no || (Array.isArray(journalData) && journalData[0]?.journal_no) || 'POSTED';
+                        const jrnNo = atomicExp.journal_no || 'POSTED';
                         this.showAppAlert('Beban operasional ' + expenseNo + ' sebesar ' + this.formatRupiah(amount) + ' berhasil dicatat dan diposting ke Jurnal Umum (' + jrnNo + ').');
 
                         this.showExpenseModal = false;
@@ -9793,84 +9198,25 @@
 
                     this.isSavingEquity = true;
                     try {
-                        // 2. Insert equity record into Supabase
-                        const { data: insertedEquity, error: eqError } = await supabaseClient
-                            .from('equity_transactions')
-                            .insert({
-                                equity_no: equityNo,
-                                equity_date: date,
-                                transaction_type: type,
-                                chart_of_account_id: coaId,
-                                payment_account_id: payAccId,
-                                amount: amount,
-                                note: note,
-                                status: 'VALID',
-                                created_by: this.currentUser.id
-                            })
-                            .select('id, equity_no')
-                            .single();
-
-                        if (eqError) throw eqError;
-                        if (!insertedEquity || !insertedEquity.id) {
-                            throw new Error('Gagal mendapatkan ID transaksi ekuitas dari database.');
-                        }
-
-                        // 3. Post Automatic Double-Entry Journal via Database RPC
-                        // CAPITAL_IN: DEBIT Kas/Bank, CREDIT Modal Pemilik
-                        // DRAWING_OUT: DEBIT Prive Pemilik, CREDIT Kas/Bank
-                        let journalLines;
-                        if (type === 'CAPITAL_IN') {
-                            journalLines = [
-                                {
-                                    chart_of_account_id: paymentCoaId,
-                                    debit: amount,
-                                    credit: 0,
-                                    description: 'Penerimaan modal kas/bank via ' + (paymentAcc.name || 'Kas/Bank')
-                                },
-                                {
-                                    chart_of_account_id: coaId,
-                                    debit: 0,
-                                    credit: amount,
-                                    description: 'Setoran modal pemilik: ' + note
-                                }
-                            ];
-                        } else {
-                            journalLines = [
-                                {
-                                    chart_of_account_id: coaId,
-                                    debit: amount,
-                                    credit: 0,
-                                    description: 'Penarikan prive pemilik: ' + note
-                                },
-                                {
-                                    chart_of_account_id: paymentCoaId,
-                                    debit: 0,
-                                    credit: amount,
-                                    description: 'Pengeluaran kas/bank prive via ' + (paymentAcc.name || 'Kas/Bank')
-                                }
-                            ];
-                        }
-
-                        const { data: journalData, error: journalError } = await supabaseClient.rpc('post_journal_entry_secure', {
-                            p_journal_date: date,
-                            p_source_type: 'EQUITY',
-                            p_source_id: insertedEquity.id,
-                            p_source_code: equityNo,
-                            p_description: 'Transaksi Ekuitas ' + equityNo + ' - ' + (type === 'CAPITAL_IN' ? 'Setor Modal' : 'Tarik Prive') + ' (' + equityCoaName + ')',
-                            p_lines: journalLines
+                        // WAJIB: Panggilan RPC Atomik Server-Side (Equity & Jurnal dalam 1 Transaksi Database)
+                        const { data: atomicEq, error: eqErr } = await supabaseClient.rpc('create_equity_transaction_atomic', {
+                            p_equity_no: equityNo,
+                            p_equity_date: date,
+                            p_transaction_type: type,
+                            p_chart_of_account_id: coaId,
+                            p_payment_account_id: payAccId,
+                            p_amount: amount,
+                            p_note: note
                         });
 
-                        if (journalError) {
-                            console.error('Error posting journal for equity:', journalError);
-                            try {
-                                await supabaseClient.from('equity_transactions').delete().eq('id', insertedEquity.id);
-                            } catch (cleanEqErr) {
-                                console.error('Error cleaning up orphaned equity row:', cleanEqErr);
-                            }
-                            throw new Error('Posting jurnal otomatis transaksi ekuitas ' + equityNo + ' ke General Ledger gagal: ' + (journalError.message || journalError));
+                        if (eqErr || !atomicEq || !atomicEq.success) {
+                            const errMsg = (eqErr && eqErr.message) ? eqErr.message : 'Pencatatan transaksi modal/prive gagal di server.';
+                            console.error('create_equity_transaction_atomic error:', eqErr);
+                            this.showAppAlert('Gagal menyimpan transaksi ekuitas: ' + errMsg);
+                            return;
                         }
 
-                        const jrnNo = journalData?.journal_no || (Array.isArray(journalData) && journalData[0]?.journal_no) || 'POSTED';
+                        const jrnNo = atomicEq.journal_no || 'POSTED';
                         this.showAppAlert('Transaksi ekuitas ' + equityNo + ' sebesar ' + this.formatRupiah(amount) + ' berhasil dicatat dan diposting ke Jurnal Umum (' + jrnNo + ').');
 
                         this.showEquityModal = false;

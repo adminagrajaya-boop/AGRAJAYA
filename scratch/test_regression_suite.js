@@ -56,25 +56,32 @@ assert(!htmlContent.includes('const insertedHist = { id: Date.now() };'), 'No mo
 assert(!htmlContent.includes('const revResult = null; const revErr = null;'), 'No mock revResult/revErr in index.html');
 assert(!htmlContent.includes('const rpcErr = null;'), 'No mock rpcErr in index.html');
 
-assert(htmlContent.includes("supabaseClient.rpc('post_journal_entry_secure',"), 'post_journal_entry_secure is called in index.html');
+// TEST 4: ALL TRANSACTIONS EXECUTE VIA ATOMIC SERVER-SIDE RPCS (NO SEPARATE CLIENT JOURNAL POSTING)
+assert(!htmlContent.includes("supabaseClient.rpc('post_journal_entry_secure',"), 'post_journal_entry_secure is eliminated from frontend in favor of single-transaction RPCs');
+assert(htmlContent.includes("supabaseClient.rpc('create_pos_transaction_atomic',"), 'POS checkout calls create_pos_transaction_atomic');
+assert(htmlContent.includes("supabaseClient.rpc('convert_quotation_to_invoice_atomic',"), 'Quotation conversion calls convert_quotation_to_invoice_atomic');
+assert(htmlContent.includes("supabaseClient.rpc('create_purchase_atomic',"), 'Purchase/PO calls create_purchase_atomic');
+assert(htmlContent.includes("supabaseClient.rpc('create_expense_atomic',"), 'Expense flow calls create_expense_atomic');
+assert(htmlContent.includes("supabaseClient.rpc('create_equity_transaction_atomic',"), 'Equity flow calls create_equity_transaction_atomic');
 assert(htmlContent.includes("supabaseClient.rpc('void_invoice_atomic',") && htmlContent.includes("supabaseClient.rpc('void_pos_transaction_atomic',"), 'Atomic void RPCs are invoked for document and journal reversals');
 assert(htmlContent.includes("supabaseClient.rpc('process_payable_payment_atomic',"), 'process_payable_payment_atomic is called in index.html');
 
-// Check each flow specifically
-const posJournalPattern = /p_source_type:\s*'TRANSACTION'/;
-assert(posJournalPattern.test(htmlContent), 'POS checkout calls post_journal_entry_secure with source TRANSACTION');
+// Check that new atomic migration exists and defines all 5 atomic engines
+const atomicEngineMigrationPath = path.join(migrationDir, '20261012_atomic_business_transactions_engine.sql');
+assert(fs.existsSync(atomicEngineMigrationPath), 'Atomic business transactions engine migration file exists');
+const atomicEngineSql = fs.readFileSync(atomicEngineMigrationPath, 'utf8');
 
-const invoiceJournalPattern = /p_source_type:\s*'INVOICE'/;
-assert(invoiceJournalPattern.test(htmlContent), 'Quotation->Invoice conversion calls post_journal_entry_secure with source INVOICE');
+assert(atomicEngineSql.includes('CREATE OR REPLACE FUNCTION public.create_pos_transaction_atomic'), 'Migration defines create_pos_transaction_atomic');
+assert(atomicEngineSql.includes('CREATE OR REPLACE FUNCTION public.create_purchase_atomic'), 'Migration defines create_purchase_atomic');
+assert(atomicEngineSql.includes('CREATE OR REPLACE FUNCTION public.create_expense_atomic'), 'Migration defines create_expense_atomic');
+assert(atomicEngineSql.includes('CREATE OR REPLACE FUNCTION public.create_equity_transaction_atomic'), 'Migration defines create_equity_transaction_atomic');
+assert(atomicEngineSql.includes('CREATE OR REPLACE FUNCTION public.convert_quotation_to_invoice_atomic'), 'Migration defines convert_quotation_to_invoice_atomic');
 
-const purchaseJournalPattern = /p_source_type:\s*'PURCHASE'/;
-assert(purchaseJournalPattern.test(htmlContent), 'Purchase/PO calls post_journal_entry_secure with source PURCHASE');
-
-const expenseJournalPattern = /p_source_type:\s*'EXPENSE'/;
-assert(expenseJournalPattern.test(htmlContent), 'Expense flow calls post_journal_entry_secure with source EXPENSE');
-
-const equityJournalPattern = /p_source_type:\s*'EQUITY'/;
-assert(equityJournalPattern.test(htmlContent), 'Equity flow calls post_journal_entry_secure with source EQUITY');
+assert(atomicEngineSql.includes('REVOKE EXECUTE ON FUNCTION public.create_pos_transaction_atomic FROM PUBLIC, anon;'), 'create_pos_transaction_atomic revoked from anon');
+assert(atomicEngineSql.includes('REVOKE EXECUTE ON FUNCTION public.create_purchase_atomic FROM PUBLIC, anon;'), 'create_purchase_atomic revoked from anon');
+assert(atomicEngineSql.includes('REVOKE EXECUTE ON FUNCTION public.create_expense_atomic FROM PUBLIC, anon;'), 'create_expense_atomic revoked from anon');
+assert(atomicEngineSql.includes('REVOKE EXECUTE ON FUNCTION public.create_equity_transaction_atomic FROM PUBLIC, anon;'), 'create_equity_transaction_atomic revoked from anon');
+assert(atomicEngineSql.includes('REVOKE EXECUTE ON FUNCTION public.convert_quotation_to_invoice_atomic FROM PUBLIC, anon;'), 'convert_quotation_to_invoice_atomic revoked from anon');
 
 // TEST 5: STATE CLEANING ON 0 QUERY RESULTS (NO STALE DATA RETENTION)
 const normalizedHtml = htmlContent.replace(/\r\n/g, '\n');
