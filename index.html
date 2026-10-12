@@ -5179,7 +5179,14 @@
                         return;
                     }
 
-                    const insertedTrxId = atomicTrx.transaction_id;
+                    const insertedTrxId = Number(atomicTrx.transaction_id);
+                    const insertedInvId = Number(atomicTrx.invoice_id);
+                    const insertedRecId = atomicTrx.receivable_id ? Number(atomicTrx.receivable_id) : null;
+
+                    if (!insertedTrxId || !insertedInvId) {
+                        this.showAppAlert('Server tidak mengembalikan ID transaksi atau invoice yang valid. Transaksi dibatalkan.');
+                        return;
+                    }
 
                     // Update Local State setelah server mengonfirmasi transaksi atomik sukses
                     const paid = this.paymentMethod === 'Kredit' ? Number(this.dpAmount || 0) : grandTotal;
@@ -5187,7 +5194,7 @@
                     const invStatus = remaining <= 0 ? 'Lunas' : (paid > 0 ? 'Sebagian' : 'Belum Bayar');
 
                     const trx = {
-                        id: insertedTrxId || Date.now(),
+                        id: insertedTrxId,
                         supabaseId: insertedTrxId,
                         code: code,
                         date: dateStr,
@@ -5203,7 +5210,8 @@
                     this.transactionHistory.unshift(trx);
 
                     this.invoiceList.unshift({
-                        id: atomicTrx.invoice_id || Date.now(),
+                        id: insertedInvId,
+                        supabaseId: insertedInvId,
                         invNo: atomicTrx.inv_no || invNo,
                         trxCode: code,
                         date: dateStr,
@@ -5217,9 +5225,10 @@
                         status: invStatus
                     });
 
-                    if (this.paymentMethod === 'Kredit' && remaining > 0) {
+                    if (this.paymentMethod === 'Kredit' && remaining > 0 && insertedRecId) {
                         this.piutangList.unshift({
-                            id: Date.now(),
+                            id: insertedRecId,
+                            supabaseId: insertedRecId,
                             invNo: atomicTrx.inv_no || invNo,
                             customerName: this.customerName || 'Pelanggan Kredit',
                             customerFarm: this.customerFarm || '-',
@@ -6144,14 +6153,19 @@
                         return;
                     }
 
-                    const insertedInvId = atomicInv.invoice_id;
-                    const insertedRecId = atomicInv.receivable_id || null;
+                    const insertedInvId = Number(atomicInv.invoice_id);
+                    const insertedRecId = atomicInv.receivable_id ? Number(atomicInv.receivable_id) : null;
+
+                    if (!insertedInvId) {
+                        this.showAppAlert('Server tidak mengembalikan ID Invoice yang valid. Konversi dibatalkan.');
+                        return;
+                    }
 
                     // 11. Update Local State
                     const inv = {
-                        id: insertedInvId || Date.now(),
+                        id: insertedInvId,
                         supabaseId: insertedInvId,
-                        invNo: invNo,
+                        invNo: atomicInv.inv_no || invNo,
                         quotationId: qt.id,
                         quotationNo: qt.qtNo,
                         date: dateStr,
@@ -6170,14 +6184,13 @@
                     this.invoiceList.unshift(inv);
                     this.saveDataToStorage();
 
-                    // ... (rest of function continues) ...
-
-                    if (!isCash && remainingVal > 0) {
-                        const existingPiutang = this.piutangList.find(p => p.invNo === invNo);
+                    if (!isTunaiLunas && remainingVal > 0 && insertedRecId) {
+                        const existingPiutang = this.piutangList.find(p => p.invNo === (atomicInv.inv_no || invNo));
                         if (!existingPiutang) {
                             this.piutangList.unshift({
-                                id: insertedRecId || Date.now(),
-                                invNo: invNo,
+                                id: insertedRecId,
+                                supabaseId: insertedRecId,
+                                invNo: atomicInv.inv_no || invNo,
                                 customerName: inv.customerName,
                                 customerFarm: inv.customerFarm,
                                 dueDate: dueDateVal,
@@ -6523,7 +6536,14 @@
                         return;
                     }
 
-                    const insertedPurchaseId = atomicPo.purchase_id;
+                    const insertedPurchaseId = Number(atomicPo.purchase_id);
+                    const insertedPayableId = atomicPo.payable_id ? Number(atomicPo.payable_id) : null;
+
+                    if (!insertedPurchaseId) {
+                        this.showAppAlert('Server tidak mengembalikan ID Pembelian yang valid. Pembelian dibatalkan.');
+                        return;
+                    }
+
                     const remaining = this.newPo.paymentMethod === 'Kredit' ? total : 0;
                     const paid = total - remaining;
 
@@ -6532,7 +6552,7 @@
                         vi.product.stock = vi.newStock;
                         if (vi.costPrice > 0) vi.product.costPrice = vi.costPrice;
                         this.stockLogs.unshift({
-                            id: Date.now() + Math.random(),
+                            id: insertedPurchaseId,
                             date: dateStr,
                             productName: vi.product.name,
                             change: vi.qty,
@@ -6542,7 +6562,7 @@
                     });
 
                     this.pembelianList.unshift({
-                        id: insertedPurchaseId || Date.now(),
+                        id: insertedPurchaseId,
                         supabaseId: insertedPurchaseId,
                         poNo: poNo,
                         date: dateStr,
@@ -6554,9 +6574,10 @@
                         paymentMethod: this.newPo.paymentMethod
                     });
 
-                    if (remaining > 0) {
+                    if (remaining > 0 && insertedPayableId) {
                         this.hutangList.unshift({
-                            id: Date.now(),
+                            id: insertedPayableId,
+                            supabaseId: insertedPayableId,
                             poNo: poNo,
                             supplierName: this.newPo.supplierName,
                             dueDate: null,
@@ -6567,7 +6588,8 @@
                     }
 
                     this.transactionHistory.unshift({
-                        id: insertedPurchaseId || Date.now(),
+                        id: insertedPurchaseId,
+                        supabaseId: insertedPurchaseId,
                         code: poNo,
                         date: dateStr,
                         type: 'Beli',

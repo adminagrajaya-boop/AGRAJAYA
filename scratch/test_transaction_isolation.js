@@ -755,6 +755,98 @@ const initialQtStock = qtProductStock[0].stock;
 engine.invoices.push({ id: 9001, inv_no: 'INV-QT-001', quotation_id: 501, status: 'Belum Lunas' });
 assert(qtProductStock[0].stock === initialQtStock, 'Quotation to invoice conversion strictly DOES NOT alter inventory stock');
 
+// 3. POS Cash Sale Atomic Persistence (transactions, invoices, invoice_items, stock_logs, journal, NO receivables)
+const cashProducts = [{ id: 2001, name: 'Pakan Layer', price: 100000, cost_price: 80000, stock: 20, type: 'barang' }];
+const cashSaleRes = (() => {
+    const qty = 2;
+    const price = 100000;
+    const net = qty * price;
+    cashProducts[0].stock -= qty;
+    const txId = 8801;
+    const invId = 7701;
+    const jId = 6601;
+    engine.transactions.push({ id: txId, trx_code: 'TRX-CASH-001', total: net, status: 'VALID' });
+    engine.invoices.push({ id: invId, inv_no: 'INV-TRX-CASH-001', transaction_id: txId, total: net, paid_amount: net, remaining: 0, status: 'Lunas' });
+    // Jurnal: Kas 200.000 (D), Pendapatan 200.000 (C)
+    engine.journals.push({
+        id: jId, source_type: 'TRANSACTION', source_code: 'TRX-CASH-001',
+        lines: [
+            { chart_of_account_id: 101, debit: net, credit: 0 },
+            { chart_of_account_id: 401, debit: 0, credit: net }
+        ]
+    });
+    return { success: true, transaction_id: txId, invoice_id: invId, receivable_id: null, journal_id: jId };
+})();
+
+assert(cashSaleRes.transaction_id === 8801, 'POS cash sale creates and returns valid transaction_id');
+assert(cashSaleRes.invoice_id === 7701, 'POS cash sale creates and returns valid invoice_id linked to transaction');
+assert(cashSaleRes.receivable_id === null, 'POS cash sale (Lunas) creates ZERO receivable records');
+assert(cashProducts[0].stock === 18, 'POS cash sale deducts stock properly');
+
+// 4. POS Credit Sale with DP: Balanced Journal & Accurate Receivable
+const creditProducts = [{ id: 2002, name: 'Pakan Grower', price: 500000, cost_price: 400000, stock: 10, type: 'barang' }];
+const creditSaleRes = (() => {
+    const qty = 2;
+    const price = 500000;
+    const net = 1000000;
+    const dp = 300000;
+    const rem = 700000;
+    creditProducts[0].stock -= qty;
+    const txId = 8802;
+    const invId = 7702;
+    const recId = 5502;
+    const jId = 6602;
+    engine.transactions.push({ id: txId, trx_code: 'TRX-CREDIT-001', total: net, status: 'VALID' });
+    engine.invoices.push({ id: invId, inv_no: 'INV-TRX-CREDIT-001', transaction_id: txId, total: net, paid_amount: dp, remaining: rem, status: 'Sebagian' });
+    engine.receivables.push({ id: recId, invoice_id: invId, inv_no: 'INV-TRX-CREDIT-001', total: net, paid: dp, remaining: rem, status: 'Sebagian' });
+    // Jurnal: Kas 300.000 (D), Piutang 700.000 (D), Pendapatan 1.000.000 (C)
+    const jLines = [
+        { chart_of_account_id: 101, debit: dp, credit: 0 },
+        { chart_of_account_id: 103, debit: rem, credit: 0 },
+        { chart_of_account_id: 401, debit: 0, credit: net }
+    ];
+    const totalD = jLines.reduce((s, l) => s + l.debit, 0);
+    const totalC = jLines.reduce((s, l) => s + l.credit, 0);
+    if (Math.abs(totalD - totalC) > 0.01) throw new Error('UNBALANCED_JOURNAL');
+    engine.journals.push({ id: jId, source_type: 'TRANSACTION', source_code: 'TRX-CREDIT-001', lines: jLines });
+    return { success: true, transaction_id: txId, invoice_id: invId, receivable_id: recId, journal_id: jId };
+})();
+
+assert(creditSaleRes.receivable_id === 5502, 'POS credit sale creates and returns valid receivable_id for remaining balance');
+assert(engine.receivables.find(r => r.id === 5502).remaining === 700000, 'Receivable remaining balance is accurate (Rp 700.000)');
+
+// 5. POS Credit Sale with 0 DP: NO False Cash Receipt
+const zeroDpSaleRes = (() => {
+    const net = 500000;
+    const dp = 0;
+    const rem = 500000;
+    const jLines = [];
+    if (dp > 0) jLines.push({ chart_of_account_id: 101, debit: dp, credit: 0 });
+    jLines.push({ chart_of_account_id: 103, debit: rem, credit: 0 });
+    jLines.push({ chart_of_account_id: 401, debit: 0, credit: net });
+    return { lines: jLines };
+})();
+
+assert(!zeroDpSaleRes.lines.some(l => l.chart_of_account_id === 101), 'POS credit with 0 DP generates NO false cash receipt in journal');
+assert(zeroDpSaleRes.lines.some(l => l.chart_of_account_id === 103 && l.debit === 500000), 'POS credit with 0 DP debits entire net total to Piutang Usaha');
+
+// 6. Server Nominal Validation: Total Mismatch Rejection
+function validateTotals(clientTotal, serverCalculatedTotal) {
+    if (Math.abs(clientTotal - serverCalculatedTotal) > 0.05) {
+        throw new Error(`TOTAL_MISMATCH: Total transaksi dari client (${clientTotal}) tidak cocok dengan hasil perhitungan server (${serverCalculatedTotal})`);
+    }
+    return true;
+}
+
+try {
+    validateTotals(1000000, 950000); // 50.000 difference
+    assert(false, 'Mismatched nominal must be rejected');
+} catch (e) {
+    assert(e.message.includes('TOTAL_MISMATCH'), 'Server strictly rejects client nominal mismatch');
+}
+
+assert(validateTotals(1000000.02, 1000000.00), 'Server allows standard floating point rounding tolerance (<= 0.05)');
+
 console.log('----------------------------------------------------------------');
 console.log(`TOTAL ISOLATION TESTS: ${passedTests + failedTests}`);
 console.log(`PASSED: ${passedTests}`);

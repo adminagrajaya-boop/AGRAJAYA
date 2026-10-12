@@ -67,21 +67,52 @@ assert(htmlContent.includes("supabaseClient.rpc('void_invoice_atomic',") && html
 assert(htmlContent.includes("supabaseClient.rpc('process_payable_payment_atomic',"), 'process_payable_payment_atomic is called in index.html');
 
 // Check that new atomic migration exists and defines all 5 atomic engines
-const atomicEngineMigrationPath = path.join(migrationDir, '20261012_atomic_business_transactions_engine.sql');
-assert(fs.existsSync(atomicEngineMigrationPath), 'Atomic business transactions engine migration file exists');
-const atomicEngineSql = fs.readFileSync(atomicEngineMigrationPath, 'utf8');
+// Check that revised atomic migration v2 exists and defines all atomic engines
+const v2MigrationPath = path.join(migrationDir, '20261012_atomic_business_transactions_engine_v2.sql');
+assert(fs.existsSync(v2MigrationPath), 'Atomic business transactions engine migration v2 file exists');
+const v2Sql = fs.readFileSync(v2MigrationPath, 'utf8');
 
-assert(atomicEngineSql.includes('CREATE OR REPLACE FUNCTION public.create_pos_transaction_atomic'), 'Migration defines create_pos_transaction_atomic');
-assert(atomicEngineSql.includes('CREATE OR REPLACE FUNCTION public.create_purchase_atomic'), 'Migration defines create_purchase_atomic');
-assert(atomicEngineSql.includes('CREATE OR REPLACE FUNCTION public.create_expense_atomic'), 'Migration defines create_expense_atomic');
-assert(atomicEngineSql.includes('CREATE OR REPLACE FUNCTION public.create_equity_transaction_atomic'), 'Migration defines create_equity_transaction_atomic');
-assert(atomicEngineSql.includes('CREATE OR REPLACE FUNCTION public.convert_quotation_to_invoice_atomic'), 'Migration defines convert_quotation_to_invoice_atomic');
+assert(v2Sql.includes('CREATE OR REPLACE FUNCTION public.create_pos_transaction_atomic'), 'Migration v2 defines create_pos_transaction_atomic');
+assert(v2Sql.includes('CREATE OR REPLACE FUNCTION public.create_purchase_atomic'), 'Migration v2 defines create_purchase_atomic');
+assert(v2Sql.includes('CREATE OR REPLACE FUNCTION public.create_expense_atomic'), 'Migration v2 defines create_expense_atomic');
+assert(v2Sql.includes('CREATE OR REPLACE FUNCTION public.create_equity_transaction_atomic'), 'Migration v2 defines create_equity_transaction_atomic');
+assert(v2Sql.includes('CREATE OR REPLACE FUNCTION public.convert_quotation_to_invoice_atomic'), 'Migration v2 defines convert_quotation_to_invoice_atomic');
+assert(v2Sql.includes('CREATE OR REPLACE FUNCTION public.void_pos_transaction_atomic'), 'Migration v2 defines enhanced void_pos_transaction_atomic');
 
-assert(atomicEngineSql.includes('REVOKE EXECUTE ON FUNCTION public.create_pos_transaction_atomic FROM PUBLIC, anon;'), 'create_pos_transaction_atomic revoked from anon');
-assert(atomicEngineSql.includes('REVOKE EXECUTE ON FUNCTION public.create_purchase_atomic FROM PUBLIC, anon;'), 'create_purchase_atomic revoked from anon');
-assert(atomicEngineSql.includes('REVOKE EXECUTE ON FUNCTION public.create_expense_atomic FROM PUBLIC, anon;'), 'create_expense_atomic revoked from anon');
-assert(atomicEngineSql.includes('REVOKE EXECUTE ON FUNCTION public.create_equity_transaction_atomic FROM PUBLIC, anon;'), 'create_equity_transaction_atomic revoked from anon');
-assert(atomicEngineSql.includes('REVOKE EXECUTE ON FUNCTION public.convert_quotation_to_invoice_atomic FROM PUBLIC, anon;'), 'convert_quotation_to_invoice_atomic revoked from anon');
+// Verify strict POS persistence: transactions, invoices, invoice_items, receivables, stock_logs, journal
+assert(v2Sql.includes('INSERT INTO public.transactions'), 'Migration v2 creates transactions record in POS');
+assert(v2Sql.includes('INSERT INTO public.invoices'), 'Migration v2 creates invoices record in POS');
+assert(v2Sql.includes('INSERT INTO public.invoice_items'), 'Migration v2 creates invoice_items record in POS');
+assert(v2Sql.includes('INSERT INTO public.receivables'), 'Migration v2 creates receivables record in POS if credit has remaining balance');
+assert(v2Sql.includes('INSERT INTO public.stock_logs'), 'Migration v2 logs stock changes with action_type SALE');
+assert(v2Sql.includes("'transaction_id', v_trx_id"), 'Migration v2 returns transaction_id');
+assert(v2Sql.includes("'invoice_id', v_inv_id"), 'Migration v2 returns invoice_id');
+assert(v2Sql.includes("'receivable_id', v_rec_id"), 'Migration v2 returns receivable_id');
+
+// Verify Server-side Nominal Re-calculation & Validation
+assert(v2Sql.includes('TOTAL_MISMATCH: Total transaksi dari client'), 'POS validates client total against server calculation');
+assert(v2Sql.includes('TOTAL_MISMATCH: Total pembelian dari client'), 'Purchase validates client total against server calculation');
+assert(v2Sql.includes('TOTAL_MISMATCH: Nilai penawaran asli'), 'Quotation conversion validates quotation total against server calculation');
+assert(v2Sql.includes('INSUFFICIENT_STOCK: Stok produk'), 'POS rejects checkout if stock insufficient');
+
+// Verify contract returns for PO and Quotation
+assert(v2Sql.includes("'payable_id', v_payable_id"), 'create_purchase_atomic returns payable_id');
+assert(v2Sql.includes("'receivable_id', v_rec_id") && v2Sql.includes("'invoice_id', v_inv_id"), 'convert_quotation_to_invoice_atomic returns invoice_id and receivable_id');
+
+// Verify Security Grants
+assert(v2Sql.includes('REVOKE EXECUTE ON FUNCTION public.create_pos_transaction_atomic FROM PUBLIC, anon;'), 'create_pos_transaction_atomic revoked from anon');
+assert(v2Sql.includes('REVOKE EXECUTE ON FUNCTION public.create_purchase_atomic FROM PUBLIC, anon;'), 'create_purchase_atomic revoked from anon');
+assert(v2Sql.includes('REVOKE EXECUTE ON FUNCTION public.create_expense_atomic FROM PUBLIC, anon;'), 'create_expense_atomic revoked from anon');
+assert(v2Sql.includes('REVOKE EXECUTE ON FUNCTION public.create_equity_transaction_atomic FROM PUBLIC, anon;'), 'create_equity_transaction_atomic revoked from anon');
+assert(v2Sql.includes('REVOKE EXECUTE ON FUNCTION public.convert_quotation_to_invoice_atomic FROM PUBLIC, anon;'), 'convert_quotation_to_invoice_atomic revoked from anon');
+assert(v2Sql.includes('REVOKE EXECUTE ON FUNCTION public.void_pos_transaction_atomic FROM PUBLIC, anon;'), 'void_pos_transaction_atomic revoked from anon');
+
+// TEST 4B: FRONTEND STRICT PERSISTENCE - NO FAKE DATE.NOW() DATABASE IDS
+assert(!htmlContent.includes('const insertedTrxId = atomicTrx.transaction_id || Date.now()'), 'Frontend does not fallback insertedTrxId to Date.now()');
+assert(!htmlContent.includes('id: atomicTrx.invoice_id || Date.now()'), 'Frontend does not fallback invoice_id to Date.now()');
+assert(!htmlContent.includes('id: Date.now(),\n                            invNo: atomicTrx.inv_no'), 'Frontend does not use Date.now() for receivable id');
+assert(!htmlContent.includes('id: insertedPurchaseId || Date.now()'), 'Frontend does not fallback purchase id to Date.now()');
+assert(!htmlContent.includes('id: insertedInvId || Date.now()'), 'Frontend does not fallback quotation conversion invoice_id to Date.now()');
 
 // TEST 5: STATE CLEANING ON 0 QUERY RESULTS (NO STALE DATA RETENTION)
 const normalizedHtml = htmlContent.replace(/\r\n/g, '\n');
